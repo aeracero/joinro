@@ -133,29 +133,53 @@ class GMControlView(ui.View):
             return False
         return True
 
-# --- Settings ---
-class SettingsModal(ui.Modal, title="配役・システム設定"):
+# --- New Settings Logic ---
+
+class SettingsMenuView(ui.View):
+    def __init__(self, room, update_callback):
+        super().__init__(timeout=60)
+        self.room = room
+        self.update_callback = update_callback
+
+    @ui.button(label="🎭 配役設定", style=discord.ButtonStyle.primary, row=0)
+    async def role_settings(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != self.room.gm_user.id:
+            return await interaction.response.send_message("権限がありません。", ephemeral=True)
+        await interaction.response.send_modal(RoleSettingsModal(self.room, self.update_callback))
+
+    @ui.button(label="⚙️ ゲーム設定", style=discord.ButtonStyle.secondary, row=0)
+    async def game_settings(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != self.room.gm_user.id:
+            return await interaction.response.send_message("権限がありません。", ephemeral=True)
+        await interaction.response.send_modal(GameSettingsModal(self.room, self.update_callback))
+
+    @ui.button(label="👥 メンバー編集", style=discord.ButtonStyle.danger, row=1)
+    async def manage_members(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != self.room.gm_user.id:
+            return await interaction.response.send_message("権限がありません。", ephemeral=True)
+        await interaction.response.send_message("追放するメンバーを選択してください:", view=PlayerManagementView(self.room, self.update_callback), ephemeral=True)
+
+class RoleSettingsModal(ui.Modal, title="配役設定"):
     def __init__(self, room, callback):
         super().__init__()
         self.room = room
         self.callback = callback
-        s = room.get_recommended_settings(len(room.players)) if not room.custom_settings else room.settings
         
-        mode_v = "1" if s["mode"] == "MANUAL" else "0"
-        close_v = "1" if s["auto_close"] else "0"
-        rematch_v = "1" if s["rematch"] else "0"
-        self.inp_sys = ui.TextInput(label="システム: モード,閉鎖,続戦(0/1)", default=f"{mode_v}, {close_v}, {rematch_v}", placeholder="例: 0, 1, 0")
+        # 現在の設定を取得（カスタム設定がない場合は推奨設定を使用）
+        s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
         
+        # 各カテゴリの初期値を作成
         def_wolves = f"{s.get('lykos',0)}, {s.get('caeneus',0)}"
-        self.inp_wolves = ui.TextInput(label="人狼: ライコス, カイニス", default=def_wolves, placeholder="1, 0")
         def_info = f"{s.get('tribbie',0)}, {s.get('sirens',0)}, {s.get('castorice',0)}, {s.get('aglaea',0)}"
-        self.inp_info = ui.TextInput(label="村: 占, 騎, 霊, アグライア", default=def_info, placeholder="1, 1, 1, 0")
         def_atk = f"{s.get('swordmaster',0)}, {s.get('phainon',0)}, {s.get('saphel',0)}"
-        self.inp_atk = ui.TextInput(label="攻撃: 剣士, 暗殺, サフェル", default=def_atk, placeholder="0, 0, 0")
         def_sp = f"{s.get('mordis',0)}, {s.get('cyrene',0)}, {s.get('cerydra',0)}, {s.get('hyanci',0)}"
-        self.inp_sp = ui.TextInput(label="特殊: モーディス,キュレネ,ケリュドラ,ヒアンシー", default=def_sp, placeholder="0, 0, 0, 0")
 
-        self.add_item(self.inp_sys)
+        # 入力項目
+        self.inp_wolves = ui.TextInput(label="人狼陣営 (左から順に入力)", default=def_wolves, placeholder="ライコス, カイニス (例: 1, 0)")
+        self.inp_info = ui.TextInput(label="村情報役 (左から順に入力)", default=def_info, placeholder="トリビー, セイレンス, キャストリス, アグライア")
+        self.inp_atk = ui.TextInput(label="攻撃・第3陣営 (左から順に入力)", default=def_atk, placeholder="剣士, ファイノン, サフェル")
+        self.inp_sp = ui.TextInput(label="特殊・その他 (左から順に入力)", default=def_sp, placeholder="モーディス, キュレネ, ケリュドラ, ヒアンシー")
+
         self.add_item(self.inp_wolves)
         self.add_item(self.inp_info)
         self.add_item(self.inp_atk)
@@ -176,11 +200,6 @@ class SettingsModal(ui.Modal, title="配役・システム設定"):
 
     async def on_submit(self, itx):
         try:
-            sys_vals = self.parse_list(self.inp_sys.value, 3)
-            self.room.settings["mode"] = "MANUAL" if sys_vals[0] == 1 else "AUTO"
-            self.room.settings["auto_close"] = True if sys_vals[1] == 1 else False
-            self.room.settings["rematch"] = True if sys_vals[2] == 1 else False
-
             wolves = self.parse_list(self.inp_wolves.value, 2)
             info = self.parse_list(self.inp_info.value, 4)
             atk = self.parse_list(self.inp_atk.value, 3)
@@ -193,12 +212,88 @@ class SettingsModal(ui.Modal, title="配役・システム設定"):
             s["mordis"], s["cyrene"], s["cerydra"], s["hyanci"] = sp[0], sp[1], sp[2], sp[3]
             
             self.room.custom_settings = True
-            m_str = "手動" if s["mode"] == "MANUAL" else "自動"
-            c_str = "閉鎖ON" if s["auto_close"] else "閉鎖OFF"
-            r_str = "続戦ON" if s["rematch"] else "続戦OFF"
-            await itx.response.send_message(f"✅ 設定更新: {m_str}, {c_str}, {r_str} (カスタム配役)", ephemeral=True)
+            await itx.response.send_message(f"✅ 配役設定を更新しました。", ephemeral=True)
             await self.callback()
-        except: await itx.response.send_message("エラー: 入力形式を確認してください", ephemeral=True)
+        except Exception as e:
+            await itx.response.send_message(f"エラー: {e}", ephemeral=True)
+
+class GameSettingsModal(ui.Modal, title="ゲーム設定"):
+    def __init__(self, room, callback):
+        super().__init__()
+        self.room = room
+        self.callback = callback
+        s = room.settings
+
+        mode_val = "1" if s["mode"] == "MANUAL" else "0"
+        time_val = str(s.get("discussion_time", 60))
+        close_val = "1" if s["auto_close"] else "0"
+        rematch_val = "1" if s["rematch"] else "0"
+
+        self.inp_mode = ui.TextInput(label="進行モード (0:自動 / 1:手動)", default=mode_val, placeholder="0 または 1", min_length=1, max_length=1)
+        self.inp_time = ui.TextInput(label="議論時間 (秒) ※自動モード時", default=time_val, placeholder="60")
+        self.inp_close = ui.TextInput(label="ゲーム後自動閉鎖 (0:OFF / 1:ON)", default=close_val, placeholder="0 または 1", min_length=1, max_length=1)
+        self.inp_rematch = ui.TextInput(label="続戦機能 (0:OFF / 1:ON)", default=rematch_val, placeholder="0 または 1", min_length=1, max_length=1)
+
+        self.add_item(self.inp_mode)
+        self.add_item(self.inp_time)
+        self.add_item(self.inp_close)
+        self.add_item(self.inp_rematch)
+
+    async def on_submit(self, itx):
+        try:
+            mode = "MANUAL" if self.inp_mode.value.strip() == "1" else "AUTO"
+            disc_time = int(self.inp_time.value.strip())
+            if disc_time < 10: disc_time = 10 
+            auto_close = True if self.inp_close.value.strip() == "1" else False
+            rematch = True if self.inp_rematch.value.strip() == "1" else False
+
+            self.room.settings["mode"] = mode
+            self.room.settings["discussion_time"] = disc_time
+            self.room.settings["auto_close"] = auto_close
+            self.room.settings["rematch"] = rematch
+            
+            m_str = "手動" if mode == "MANUAL" else "自動"
+            c_str = "ON" if auto_close else "OFF"
+            r_str = "ON" if rematch else "OFF"
+
+            await itx.response.send_message(f"✅ ゲーム設定更新: モード={m_str}, 時間={disc_time}秒, 閉鎖={c_str}, 続戦={r_str}", ephemeral=True)
+            await self.callback()
+        except ValueError:
+            await itx.response.send_message("エラー: 数値を入力してください。", ephemeral=True)
+
+class PlayerManagementView(ui.View):
+    def __init__(self, room, callback):
+        super().__init__(timeout=60)
+        self.room = room
+        self.callback = callback
+        
+        options = []
+        for p in room.players.values():
+            options.append(discord.SelectOption(label=p.name, value=str(p.id), description=f"ID: {p.id}"))
+        
+        if not options:
+            options.append(discord.SelectOption(label="参加者なし", value="none"))
+
+        self.select = ui.Select(placeholder="追放するメンバーを選択...", options=options, max_values=1)
+        self.select.callback = self.on_select
+        self.add_item(self.select)
+
+    async def on_select(self, interaction: discord.Interaction):
+        if self.select.values[0] == "none":
+            return await interaction.response.send_message("対象がいません。", ephemeral=True)
+        
+        target_id = int(self.select.values[0])
+        player = self.room.players.get(target_id)
+        
+        if player:
+            if player.id == self.room.gm_user.id:
+                 return await interaction.response.send_message("GM自身は追放できません。", ephemeral=True)
+            
+            self.room.leave(player.member)
+            await interaction.response.send_message(f"👋 **{player.name}** を追放しました。", ephemeral=True)
+            await self.callback()
+        else:
+            await interaction.response.send_message("プレイヤーが見つかりません。", ephemeral=True)
 
 # --- Views ---
 class VoteView(ui.View):
@@ -984,8 +1079,8 @@ class WerewolfSystem(commands.Cog):
                         await update_panel()
                     @ui.button(label="設定", style=discord.ButtonStyle.secondary)
                     async def setting(self, itx, btn):
-                        room.gm_user = itx.user
-                        await itx.response.send_modal(SettingsModal(room, update_panel))
+                        room.gm_user = itx.user 
+                        await itx.response.send_message("設定メニュー:", view=SettingsMenuView(room, update_panel), ephemeral=True)
                     @ui.button(label="💥 解散", style=discord.ButtonStyle.secondary)
                     async def cancel(self, itx, btn):
                         room.phase = "CANCELLED"
