@@ -13,7 +13,6 @@ class Launcher(ui.View):
     
     @ui.button(label="⚔️ オンパロス戦線を作成", style=discord.ButtonStyle.primary, custom_id="ww_create_room")
     async def create_room(self, interaction: discord.Interaction, button: ui.Button):
-        # Bot再起動後も動くようにCogを動的に取得
         system = self.bot_system
         if system is None:
             system = interaction.client.get_cog("WerewolfSystem")
@@ -37,7 +36,6 @@ class GMPlayerActionView(ui.View):
 
     @ui.button(label="💀 死亡認定", style=discord.ButtonStyle.danger)
     async def kill_player(self, interaction: discord.Interaction, button: ui.Button):
-        # 共通の死亡処理(チャンネル移動含む)を実行
         await self.system.kill_player_logic(self.room, self.target)
         await interaction.response.send_message(f"💀 **{self.target.name}** を死亡判定にしました。", ephemeral=True)
 
@@ -151,13 +149,13 @@ class SettingsModal(ui.Modal, title="設定"):
             await self.callback()
         except: await itx.response.send_message("エラー", ephemeral=True)
 
-# --- 投票View (1回制限・自動集計・スキップ) ---
+# --- 投票View ---
 class VoteView(ui.View):
     def __init__(self, room, player, system):
         super().__init__(timeout=None)
         self.room = room
         self.player = player
-        self.system = system # 処刑処理のためsystemを受け取る
+        self.system = system 
         
         options = []
         for p in room.get_alive():
@@ -170,7 +168,6 @@ class VoteView(ui.View):
         self.add_item(select)
     
     async def on_vote(self, interaction: discord.Interaction):
-        # 重複投票防止
         if interaction.user.id in self.room.votes:
             await interaction.response.send_message("⚠️ 既に投票済みです。", ephemeral=True)
             return
@@ -185,20 +182,16 @@ class VoteView(ui.View):
             target_p = self.room.players.get(target_id)
             target_name = target_p.name if target_p else "不明"
 
-        # GMへ通知
         if self.room.gm_user:
             try: await self.room.gm_user.send(f"🗳️ **{self.player.name}** -> {target_name}")
             except: pass
         
-        # メニューを消して結果表示 (1回しか投票できなくなる)
         await interaction.response.edit_message(content=f"✅ **{target_name}** に投票しました。", view=None)
 
-        # 自動集計: 全員投票したら実行
         if len(self.room.votes) >= len(self.room.get_alive()):
             await self.tally_votes()
 
     async def tally_votes(self):
-        # 既に集計済みならガード（同時押し対策）
         if hasattr(self.room, "vote_finished") and self.room.vote_finished: return
         self.room.vote_finished = True
 
@@ -206,7 +199,6 @@ class VoteView(ui.View):
         await target_ch.send("🗳️ **投票終了**。全員の投票が完了しました。\n開票を行います...")
         await asyncio.sleep(3)
 
-        # 集計ロジック
         tally = {}
         for voter_id, target in self.room.votes.items():
             voter = self.room.players.get(voter_id)
@@ -215,13 +207,12 @@ class VoteView(ui.View):
 
         if not tally:
             await target_ch.send("投票がありませんでした。")
-            self.room.vote_finished = False # リセット
+            self.room.vote_finished = False 
             return
 
         max_votes = max(tally.values())
         candidates = [t for t, count in tally.items() if count == max_votes]
 
-        # スキップ優先または抽選
         if "skip" in candidates:
             await target_ch.send("投票の結果、**スキップ** が多数となりました。\n本日の処刑は見送られます。")
         else:
@@ -229,18 +220,16 @@ class VoteView(ui.View):
             executed_player = self.room.players.get(final_target_id)
             
             if executed_player:
-                # ★処刑実行（チャンネル移動含む）
                 await self.system.kill_player_logic(self.room, executed_player)
                 self.room.last_executed = executed_player
                 
                 if executed_player.role == ROLE_CYRENE:
                     self.room.cyrene_executed = True
                     await target_ch.send(f"⚠️ 処刑された **{executed_player.name}** は... **{ROLE_CYRENE}** でした！！\n禁忌に触れたため、オンパロス陣営は敗北となります。")
-                # 通常の追放メッセージは kill_player_logic 内で行われるためここでは補足のみ
             else:
                 await target_ch.send("エラー: 対象が見つかりません。")
 
-# --- Night Action View (1回制限) ---
+# --- Night Action View ---
 class NightActionView(ui.View):
     def __init__(self, room, player, action_type, callback):
         super().__init__(timeout=120)
@@ -259,7 +248,6 @@ class NightActionView(ui.View):
     
     async def on_select(self, itx):
         tid = int(itx.data['values'][0]) if itx.data['values'][0] != "none" else None
-        # Viewを消して再選択不可にする
         await self.callback(itx, self.player, self.action_type, tid)
 
 
@@ -298,7 +286,7 @@ class WerewolfSystem(commands.Cog):
             grave_ov = cat_ov.copy()
             room.grave_ch = await room.category.create_text_channel("🪦墓場-graveyard", overwrites=grave_ov)
             
-            await room.main_ch.send(f"{len(room.players)}名の英雄たちよ、ここが戦場だ。\n火種を奪われた者はここから姿を消し、墓場へ送られる。")
+            await room.main_ch.send(f"{len(room.players)}名の英雄たちよ、ここが戦場だ。\n火種を奪われた者はここでの発言権を失い、墓場へ送られる。")
             
         except Exception as e:
             await room.lobby_channel.send(f"⚠️ 会場作成エラー: {e}")
@@ -309,17 +297,21 @@ class WerewolfSystem(commands.Cog):
         if room.grave_ch: await room.grave_ch.delete()
         if room.category: await room.category.delete()
 
+    # ★死亡処理 (権限書き換え)
     async def kill_player_logic(self, room, player):
         if not player.is_alive: return
         player.is_alive = False
         
         if room.main_ch and room.grave_ch:
-            # 議論ch: 見えなくする (物理的に消滅)
-            await room.main_ch.set_permissions(player.member, read_messages=False, send_messages=False)
-            # 墓場ch: 見えるようにする
+            # 議論ch: 閲覧のみ可 (書き込み不可)
+            # read_messages=True, send_messages=False に変更
+            await room.main_ch.set_permissions(player.member, read_messages=True, send_messages=False)
+            
+            # 墓場ch: 見える＆書ける
             await room.grave_ch.set_permissions(player.member, read_messages=True, send_messages=True)
             
-            await room.main_ch.send(f"💀 **{player.name}** が脱落しました。")
+            # 通知
+            await room.main_ch.send(f"💀 **{player.name}** が脱落しました。（以降、発言はできません）")
             await room.grave_ch.send(f"🪦 **{player.name}** が火種を失い、ここに辿り着きました。")
 
     # --- Commands ---
@@ -376,10 +368,10 @@ class WerewolfSystem(commands.Cog):
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
         await target_ch.send("🗳️ **投票フェーズ** を開始します。(全員投票で即時開票)")
         room.votes = {}
-        room.vote_finished = False # フラグリセット
+        room.vote_finished = False
         tasks = []
         for p in room.get_alive():
-            view = VoteView(room, p, self) # self=systemを渡す
+            view = VoteView(room, p, self)
             tasks.append(self.bot.get_user(p.id).send("【投票】 追放する者を選んでください（1回のみ）", view=view))
         await asyncio.gather(*tasks)
 
@@ -569,20 +561,15 @@ class WerewolfSystem(commands.Cog):
             room.vote_finished = False
             ts=[]
             for p in room.get_alive():
-                # VoteViewにシステムを渡すことで自動集計が動く
                 ts.append(self.bot.get_user(p.id).send("投票してください", view=VoteView(room, p, self)))
             await asyncio.gather(*ts)
             
-            # 最大3分待機 (全員投票でVoteViewがtallyを呼ぶので、それを待つ)
             elapsed=0
             start_alive = len(room.get_alive())
             while elapsed < 180:
                 await asyncio.sleep(1)
                 elapsed+=1
-                # 誰か処刑された or フラグが立った
                 if hasattr(room, "last_executed") and room.last_executed: break
-                # スキップ等で誰も死ななかった場合も考慮必要だが、VoteView内でメッセージが出るので
-                # ここではvote_finishedフラグを見るのが安全かもしれない
                 if hasattr(room, "vote_finished") and room.vote_finished: break
             
             if hasattr(room, "last_executed"): del room.last_executed
@@ -602,6 +589,7 @@ class WerewolfSystem(commands.Cog):
         for p in room.players.values(): det += f"{p.name}: {p.role} ({'生' if p.is_alive else '死'})\n"
         embed.add_field(name="内訳", value=det)
         await target_ch.send(embed=embed)
+        
         await target_ch.send("会場は60秒後に閉鎖されます...")
         await asyncio.sleep(60)
 
