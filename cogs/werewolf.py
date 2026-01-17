@@ -17,6 +17,7 @@ class Launcher(ui.View):
         system = self.bot_system
         if system is None:
             system = interaction.client.get_cog("WerewolfSystem")
+        
         if system:
             await system.create_room_logic(interaction)
         else:
@@ -130,77 +131,100 @@ class GMControlView(ui.View):
             return False
         return True
 
-# --- Settings (修正版) ---
-class SettingsModal(ui.Modal, title="設定 (全角数字OK)"):
+# --- Settings (全役職対応版) ---
+class SettingsModal(ui.Modal, title="配役設定"):
     def __init__(self, room, callback):
         super().__init__()
         self.room = room
         self.callback = callback
         
-        # ★ポイント: まだカスタム設定されていない場合、現在の人数に基づく「おすすめ配役」を初期値にする
-        if not room.custom_settings:
-            current_settings = room.get_recommended_settings(len(room.players))
-        else:
-            current_settings = room.settings
+        # 現在の設定を取得 (まだ弄ってなければ推奨設定)
+        s = room.get_recommended_settings(len(room.players)) if not room.custom_settings else room.settings
 
-        curr_mode = "1" if room.settings["mode"] == "MANUAL" else "0"
+        # 1. モード設定
+        curr_mode = "1" if s["mode"] == "MANUAL" else "0"
+        self.inp_mode = ui.TextInput(label="モード (0:自動 / 1:手動GM)", default=curr_mode, max_length=1)
         
-        self.mode_input = ui.TextInput(label="モード (0:自動 / 1:手動GM)", default=curr_mode, max_length=1)
-        self.lykos = ui.TextInput(label="ライコス", default=str(current_settings["lykos"]))
-        self.tribbie = ui.TextInput(label="トリビー", default=str(current_settings["tribbie"]))
+        # 2. 人狼・狂人
+        def_wolves = f"{s.get('lykos',0)}, {s.get('caeneus',0)}"
+        self.inp_wolves = ui.TextInput(label="人狼陣営: ライコス, カイニス", default=def_wolves, placeholder="例: 2, 1")
         
-        # 特殊役職の初期値生成
-        sp_vals = [
-            str(current_settings.get('swordmaster', 0)),
-            str(current_settings.get('mordis', 0)),
-            str(current_settings.get('cyrene', 0)),
-            str(current_settings.get('phainon', 0))
-        ]
-        self.specials = ui.TextInput(label="剣,モ,キ,フ (例:1,0,0,0)", default=",".join(sp_vals))
+        # 3. 村役職 (占い, 騎士, 霊媒)
+        def_power = f"{s.get('tribbie',0)}, {s.get('sirens',0)}, {s.get('castorice',0)}"
+        self.inp_power = ui.TextInput(label="村役職: トリビー, セイレンス, キャストリス", default=def_power, placeholder="例: 1, 1, 1")
         
-        self.add_item(self.mode_input)
-        self.add_item(self.lykos)
-        self.add_item(self.tribbie)
-        self.add_item(self.specials)
+        # 4. 特殊・第三 (剣士, モーディス)
+        def_special = f"{s.get('swordmaster',0)}, {s.get('mordis',0)}"
+        self.inp_special = ui.TextInput(label="特殊: 黒衣の剣士, モーディス", default=def_special, placeholder="例: 1, 0")
+        
+        # 5. 固有 (キュレネ, ファイノン)
+        def_unique = f"{s.get('cyrene',0)}, {s.get('phainon',0)}"
+        self.inp_unique = ui.TextInput(label="固有: キュレネ, ファイノン", default=def_unique, placeholder="例: 0, 0")
+
+        self.add_item(self.inp_mode)
+        self.add_item(self.inp_wolves)
+        self.add_item(self.inp_power)
+        self.add_item(self.inp_special)
+        self.add_item(self.inp_unique)
 
     def normalize(self, text):
-        """全角数字等を半角に変換する"""
         return unicodedata.normalize('NFKC', text)
+
+    def parse_list(self, text, count):
+        """カンマ区切りテキストを整数のリストにする"""
+        text = self.normalize(text)
+        for sep in ['、', ' ', '　']:
+            text = text.replace(sep, ',')
+        parts = [p.strip() for p in text.split(',') if p.strip()]
+        result = []
+        for i in range(count):
+            try:
+                val = int(parts[i])
+                result.append(val)
+            except:
+                result.append(0)
+        return result
 
     async def on_submit(self, itx):
         try:
-            # 入力値の正規化 (全角→半角)
-            mode_val = self.normalize(self.mode_input.value)
-            lykos_val = int(self.normalize(self.lykos.value))
-            tribbie_val = int(self.normalize(self.tribbie.value))
+            # モード設定
+            mode_val = self.normalize(self.inp_mode.value)
+            self.room.settings["mode"] = "MANUAL" if mode_val == "1" else "AUTO"
             
-            # 特殊枠のパース (全角カンマやスペースにも対応)
-            raw_sp = self.normalize(self.specials.value)
-            # カンマ、読点、スペースで区切る
-            for sep in ['、', ' ', '　']:
-                raw_sp = raw_sp.replace(sep, ',')
-            sp_list = [x for x in raw_sp.split(',') if x.strip()] # 空文字除去
+            # 各役職のパース
+            wolves = self.parse_list(self.inp_wolves.value, 2)
+            power = self.parse_list(self.inp_power.value, 3)
+            special = self.parse_list(self.inp_special.value, 2)
+            unique = self.parse_list(self.inp_unique.value, 2)
             
             # 設定反映
-            self.room.custom_settings = True # これ以降は自動調整しない
-            self.room.settings["mode"] = "MANUAL" if mode_val == "1" else "AUTO"
-            self.room.settings["lykos"] = lykos_val
-            self.room.settings["tribbie"] = tribbie_val
+            s = self.room.settings
+            s["lykos"], s["caeneus"] = wolves[0], wolves[1]
+            s["tribbie"], s["sirens"], s["castorice"] = power[0], power[1], power[2]
+            s["swordmaster"], s["mordis"] = special[0], special[1]
+            s["cyrene"], s["phainon"] = unique[0], unique[1]
             
-            # 安全に代入
-            if len(sp_list) >= 1: self.room.settings["swordmaster"] = int(sp_list[0])
-            if len(sp_list) >= 2: self.room.settings["mordis"] = int(sp_list[1])
-            if len(sp_list) >= 3: self.room.settings["cyrene"] = int(sp_list[2])
-            if len(sp_list) >= 4: self.room.settings["phainon"] = int(sp_list[3])
+            # カスタムフラグON
+            self.room.custom_settings = True
             
-            m_str = "手動GM" if self.room.settings["mode"] == "MANUAL" else "全自動"
-            await itx.response.send_message(f"✅ 設定を更新しました: {m_str} (カスタム配役固定)", ephemeral=True)
+            # 合計チェック
+            total_roles = sum([
+                s["lykos"], s["caeneus"], s["tribbie"], s["sirens"], s["castorice"],
+                s["swordmaster"], s["mordis"], s["cyrene"], s["phainon"]
+            ])
+            player_count = len(self.room.players)
+            citizen_count = player_count - total_roles
+            
+            warn = ""
+            if citizen_count < 0:
+                warn = f"\n⚠️ 注意: 役職数({total_roles})が参加者({player_count})を超えています！"
+            
+            m_str = "手動GM" if s["mode"] == "MANUAL" else "全自動"
+            await itx.response.send_message(f"✅ 設定更新: {m_str} (カスタム配役)\n市民枠: {citizen_count}名{warn}", ephemeral=True)
             await self.callback()
             
-        except ValueError:
-            await itx.response.send_message("⚠️ 入力エラー: 数字を入力してください。", ephemeral=True)
         except Exception as e:
-            await itx.response.send_message(f"⚠️ エラーが発生しました: {e}", ephemeral=True)
+            await itx.response.send_message(f"⚠️ エラー: {e}", ephemeral=True)
 
 # --- Vote/Action Views ---
 class VoteView(ui.View):
@@ -527,7 +551,14 @@ class WerewolfSystem(commands.Cog):
                 note = "(カスタム設定)"
 
             m_txt = "🤖全自動" if s["mode"]=="AUTO" else f"👤手動GM"
-            desc = f"モード: **{m_txt}** {note}\n🐺:{s_display['lykos']} 🔮:{s_display['tribbie']} 🛡️:{s_display['sirens']} ⚔️:{s_display['swordmaster']}"
+            
+            # 全役職を表示
+            role_summary = (
+                f"🐺:{s_display['lykos']} 狂:{s_display['caeneus']} 🔮:{s_display['tribbie']} 👻:{s_display['castorice']}\n"
+                f"🛡️:{s_display['sirens']} ⚔️:{s_display['swordmaster']} 💀:{s_display['mordis']}\n"
+                f"💣:{s_display['cyrene']} 👮:{s_display['phainon']}"
+            )
+            desc = f"モード: **{m_txt}** {note}\n{role_summary}"
             embed = discord.Embed(title="参加者募集中", description=desc, color=0x9b59b6)
             p_names = "\n".join([p.name for p in room.players.values()])
             embed.add_field(name=f"参加者 {len(room.players)}", value=p_names or "なし")
