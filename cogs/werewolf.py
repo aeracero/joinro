@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import ui
 import asyncio
 import random
+import unicodedata
 from objects import *
 
 # --- Launcher ---
@@ -21,7 +22,7 @@ class Launcher(ui.View):
         else:
             await interaction.response.send_message("システムエラー: Botを再起動してください。", ephemeral=True)
 
-# --- GM Player Actions ---
+# --- GM Actions ---
 class GMPlayerActionView(ui.View):
     def __init__(self, room, target_player, system):
         super().__init__(timeout=60)
@@ -122,46 +123,84 @@ class GMControlView(ui.View):
     async def close_room(self, interaction: discord.Interaction, button: ui.Button):
         if not self.check_perm(interaction): return
         self.room.phase = "CANCELLED"
-        await interaction.response.send_message("部屋を解散します。", ephemeral=True)
+        await interaction.response.send_message("部屋を解散しました。", ephemeral=True)
 
     def check_perm(self, interaction):
         if not self.room.gm_user or interaction.user.id != self.room.gm_user.id:
             return False
         return True
 
-# --- Settings ---
-class SettingsModal(ui.Modal, title="設定"):
+# --- Settings (修正版) ---
+class SettingsModal(ui.Modal, title="設定 (全角数字OK)"):
     def __init__(self, room, callback):
         super().__init__()
         self.room = room
         self.callback = callback
-        curr = "1" if room.settings["mode"] == "MANUAL" else "0"
-        self.mode_input = ui.TextInput(label="モード (0:自動 / 1:手動GM)", default=curr, max_length=1)
-        self.lykos = ui.TextInput(label="ライコス", default=str(room.settings["lykos"]))
-        self.tribbie = ui.TextInput(label="トリビー", default=str(room.settings["tribbie"]))
-        self.specials = ui.TextInput(label="剣,モ,キ,フ (例:1,0,0,0)", default=f"{room.settings['swordmaster']},{room.settings['mordis']},{room.settings['cyrene']},{room.settings['phainon']}")
+        
+        # ★ポイント: まだカスタム設定されていない場合、現在の人数に基づく「おすすめ配役」を初期値にする
+        if not room.custom_settings:
+            current_settings = room.get_recommended_settings(len(room.players))
+        else:
+            current_settings = room.settings
+
+        curr_mode = "1" if room.settings["mode"] == "MANUAL" else "0"
+        
+        self.mode_input = ui.TextInput(label="モード (0:自動 / 1:手動GM)", default=curr_mode, max_length=1)
+        self.lykos = ui.TextInput(label="ライコス", default=str(current_settings["lykos"]))
+        self.tribbie = ui.TextInput(label="トリビー", default=str(current_settings["tribbie"]))
+        
+        # 特殊役職の初期値生成
+        sp_vals = [
+            str(current_settings.get('swordmaster', 0)),
+            str(current_settings.get('mordis', 0)),
+            str(current_settings.get('cyrene', 0)),
+            str(current_settings.get('phainon', 0))
+        ]
+        self.specials = ui.TextInput(label="剣,モ,キ,フ (例:1,0,0,0)", default=",".join(sp_vals))
+        
         self.add_item(self.mode_input)
         self.add_item(self.lykos)
         self.add_item(self.tribbie)
         self.add_item(self.specials)
 
+    def normalize(self, text):
+        """全角数字等を半角に変換する"""
+        return unicodedata.normalize('NFKC', text)
+
     async def on_submit(self, itx):
         try:
-            # ★設定をいじったらフラグを立てる（自動バランス無効化）
-            self.room.custom_settings = True
+            # 入力値の正規化 (全角→半角)
+            mode_val = self.normalize(self.mode_input.value)
+            lykos_val = int(self.normalize(self.lykos.value))
+            tribbie_val = int(self.normalize(self.tribbie.value))
             
-            self.room.settings["mode"] = "MANUAL" if self.mode_input.value == "1" else "AUTO"
-            self.room.settings["lykos"] = int(self.lykos.value)
-            self.room.settings["tribbie"] = int(self.tribbie.value)
-            sp = self.specials.value.split(',')
-            if len(sp) >= 1: self.room.settings["swordmaster"] = int(sp[0])
-            if len(sp) >= 2: self.room.settings["mordis"] = int(sp[1])
-            if len(sp) >= 3: self.room.settings["cyrene"] = int(sp[2])
-            if len(sp) >= 4: self.room.settings["phainon"] = int(sp[3])
+            # 特殊枠のパース (全角カンマやスペースにも対応)
+            raw_sp = self.normalize(self.specials.value)
+            # カンマ、読点、スペースで区切る
+            for sep in ['、', ' ', '　']:
+                raw_sp = raw_sp.replace(sep, ',')
+            sp_list = [x for x in raw_sp.split(',') if x.strip()] # 空文字除去
+            
+            # 設定反映
+            self.room.custom_settings = True # これ以降は自動調整しない
+            self.room.settings["mode"] = "MANUAL" if mode_val == "1" else "AUTO"
+            self.room.settings["lykos"] = lykos_val
+            self.room.settings["tribbie"] = tribbie_val
+            
+            # 安全に代入
+            if len(sp_list) >= 1: self.room.settings["swordmaster"] = int(sp_list[0])
+            if len(sp_list) >= 2: self.room.settings["mordis"] = int(sp_list[1])
+            if len(sp_list) >= 3: self.room.settings["cyrene"] = int(sp_list[2])
+            if len(sp_list) >= 4: self.room.settings["phainon"] = int(sp_list[3])
+            
             m_str = "手動GM" if self.room.settings["mode"] == "MANUAL" else "全自動"
-            await itx.response.send_message(f"設定更新: {m_str} (カスタム配役)", ephemeral=True)
+            await itx.response.send_message(f"✅ 設定を更新しました: {m_str} (カスタム配役固定)", ephemeral=True)
             await self.callback()
-        except: await itx.response.send_message("エラー", ephemeral=True)
+            
+        except ValueError:
+            await itx.response.send_message("⚠️ 入力エラー: 数字を入力してください。", ephemeral=True)
+        except Exception as e:
+            await itx.response.send_message(f"⚠️ エラーが発生しました: {e}", ephemeral=True)
 
 # --- Vote/Action Views ---
 class VoteView(ui.View):
@@ -260,13 +299,12 @@ class NightActionView(ui.View):
         await self.callback(itx, self.player, self.action_type, tid)
 
 
-# --- Bot System (Cog) ---
+# --- Bot System ---
 class WerewolfSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.rooms = {}
 
-    # --- Setup & Cleanup ---
     async def setup_venue(self, room):
         guild = room.lobby_channel.guild
         cat_ov = {
@@ -307,34 +345,24 @@ class WerewolfSystem(commands.Cog):
     async def kill_player_logic(self, room, player):
         if not player.is_alive: return
         player.is_alive = False
-        
         if room.main_ch and room.grave_ch:
-            # 議論ch: 閲覧のみ
             await room.main_ch.set_permissions(player.member, read_messages=True, send_messages=False)
-            # 墓場ch: 読み書き可
             await room.grave_ch.set_permissions(player.member, read_messages=True, send_messages=True)
-            
             await room.main_ch.send(f"💀 **{player.name}** が脱落しました。")
             await room.grave_ch.send(f"🪦 **{player.name}** が火種を失い、ここに辿り着きました。")
 
     async def revive_player_logic(self, room, player):
         if player.is_alive: return
         player.is_alive = True
-        
         if room.main_ch and room.grave_ch:
-            # 議論ch: 読み書き復活
             await room.main_ch.set_permissions(player.member, read_messages=True, send_messages=True)
-            # 墓場ch: 初期化(見えない)
             await room.grave_ch.set_permissions(player.member, overwrite=None)
-            
             await room.main_ch.send(f"😇 奇跡が起き、**{player.name}** の火種が戻りました！")
             await room.grave_ch.send(f"😇 **{player.name}** が蘇生され、戦場へ戻りました。")
 
-    # --- Phase Logic ---
     async def start_night_logic(self, room):
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
         await target_ch.send("🌙 **夜のアクション** を開始します。")
-        
         async def cb(itx, player, act, tid):
             target = room.players[tid] if tid else None
             t_name = target.name if target else "なし"
@@ -345,7 +373,6 @@ class WerewolfSystem(commands.Cog):
             else:
                 await itx.response.edit_message(content=f"✅ {t_name}を選択", view=None)
                 if room.gm_user: await room.gm_user.send(f"🌙 {player.name} -> {t_name}")
-        
         tasks = []
         for p in room.get_alive():
             view = None
@@ -354,9 +381,7 @@ class WerewolfSystem(commands.Cog):
             elif p.role == ROLE_TRIBBIE: view=NightActionView(room,p,"divine",cb); msg="【占い】 誰を占いますか？"
             elif p.role == ROLE_SIRENS: view=NightActionView(room,p,"guard",cb); msg="【護衛】 誰を守りますか？"
             elif p.role == ROLE_SWORDMASTER: view=NightActionView(room,p,"slash",cb); msg="【辻斬り】 誰を狙いますか？"
-            
             if view: tasks.append(self.bot.get_user(p.id).send(msg, view=view))
-        
         if tasks: await asyncio.gather(*tasks)
         else: await target_ch.send("（能力を使用できる生存者がいません）")
 
@@ -372,41 +397,30 @@ class WerewolfSystem(commands.Cog):
         if tasks: await asyncio.gather(*tasks)
         else: await target_ch.send("（投票できる生存者がいません）")
 
-    # --- DM Commands ---
-    
-    # ★追加: 役職一覧確認
     @commands.command()
     async def wroles(self, ctx):
-        """[DM] 全役職の説明を表示"""
         embed = discord.Embed(title="📜 オンパロス戦線 役職一覧", color=0x3498db)
         for role, data in ROLE_DATA.items():
             embed.add_field(name=role, value=data["desc"], inline=False)
         await ctx.send(embed=embed)
 
-    # ★追加: 自分の部屋の生存者確認
     @commands.command()
     async def walive(self, ctx):
-        """[DM] 参加中の部屋の生存者を表示"""
-        # ユーザーが参加している部屋を探す
         found_room = None
         for room in self.rooms.values():
             if ctx.author.id in room.players:
                 found_room = room
                 break
-        
         if not found_room:
             await ctx.send("現在進行中のゲームに参加していません。")
             return
-
         alive_list = [p.name for p in found_room.players.values() if p.is_alive]
         dead_list = [p.name for p in found_room.players.values() if not p.is_alive]
-        
         embed = discord.Embed(title="📊 現在の状況", color=0x2ecc71)
         embed.add_field(name=f"🟢 生存 ({len(alive_list)})", value="\n".join(alive_list) or "なし", inline=True)
         embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
         await ctx.send(embed=embed)
 
-    # --- Standard Commands ---
     @commands.command()
     async def panel(self, ctx):
         room_list = ""
@@ -465,7 +479,6 @@ class WerewolfSystem(commands.Cog):
         await ctx.message.delete()
         await self.start_night_logic(room)
 
-    # --- Listener ---
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot: return
@@ -479,12 +492,10 @@ class WerewolfSystem(commands.Cog):
                 embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
                 await message.channel.send(embed=embed)
             else:
-                # DMでのコマンド案内も含める
-                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.2", color=0x9b59b6)
-                embed.add_field(name="DMコマンド", value="`!wroles`: 全役職を見る\n`!walive`: 参加中の部屋の生存者を見る", inline=False)
+                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.3 (Beta)", color=0x9b59b6)
+                embed.add_field(name="✨ v0.3 更新内容", value="• 📩 DMコマンド `!wroles`, `!walive` 追加\n• ⚖️ 配役自動バランス調整\n• 😇 GM蘇生機能・進行ボタン追加", inline=False)
                 await message.channel.send(embed=embed)
 
-    # --- Logic ---
     async def create_room_logic(self, itx_or_ctx):
         channel = None
         user = None
@@ -507,10 +518,7 @@ class WerewolfSystem(commands.Cog):
 
         async def update_panel():
             s = room.settings
-            # 設定いじってないなら「自動調整」と表記
             if not room.custom_settings:
-                # 仮の自動数値を計算して表示だけ更新するか、あるいは「人数に応じて変動」と書くか
-                # ここでは現在の人数での推奨値を計算して表示する
                 rec = room.get_recommended_settings(len(room.players))
                 s_display = rec
                 note = "(人数に合わせて自動調整)"
@@ -588,7 +596,6 @@ class WerewolfSystem(commands.Cog):
         room.assign_roles()
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
 
-        # ★役職通知 (詳細版)
         spoiler_txt = "【役職一覧】\n"
         for p in room.players.values():
             spoiler_txt += f"{p.name}: {p.role}\n"
@@ -601,11 +608,9 @@ class WerewolfSystem(commands.Cog):
                     embed.add_field(name="能力", value="✅ **使用可能** (GMの合図で使用)", inline=False)
                 else:
                     embed.add_field(name="能力", value="❌ **能動的な能力なし**", inline=False)
-                
                 if p.role == ROLE_LYKOS:
                     mates = [x.name for x in room.players.values() if x.role == ROLE_LYKOS and x.id != p.id]
                     embed.add_field(name="仲間のライコス", value=", ".join(mates) if mates else "なし", inline=False)
-
                 try: await u.send(embed=embed)
                 except: pass
 
@@ -622,13 +627,11 @@ class WerewolfSystem(commands.Cog):
                 if room.phase == "CANCELLED": return
             return
 
-        # === 全自動モード (既存ロジック継続) ===
+        # === Auto Mode ===
         await target_ch.send("全自動モード開始。")
-        
         day = 1
         while True:
             if room.phase == "CANCELLED": break
-            
             await self.start_night_logic(room)
             await asyncio.sleep(20)
 
@@ -636,9 +639,7 @@ class WerewolfSystem(commands.Cog):
             st,gt,sl = room.night_actions.get("steal"), room.night_actions.get("guard"), room.night_actions.get("slash")
             dead = []
             for t in set([x for x in [st,sl] if x]):
-                if t!=gt: 
-                    victim = room.players[t]
-                    dead.append(victim)
+                if t!=gt: dead.append(room.players[t])
             
             for d in dead: await self.kill_player_logic(room, d)
             
@@ -653,7 +654,6 @@ class WerewolfSystem(commands.Cog):
             await self.start_vote_logic(room)
             
             elapsed=0
-            start_alive = len(room.get_alive())
             while elapsed < 180:
                 await asyncio.sleep(1)
                 elapsed+=1
