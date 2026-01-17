@@ -2,7 +2,7 @@
 import discord
 import random
 
-# --- 役職定義 (オンパロス) ---
+# --- 役職定義 ---
 ROLE_CITIZEN = "タイタンの末裔"
 ROLE_LYKOS = "ライコス"
 ROLE_CAENEUS = "カイニス"
@@ -41,13 +41,17 @@ class Player:
 
 class GameRoom:
     def __init__(self, channel: discord.TextChannel):
-        self.channel = channel
+        self.lobby_channel = channel # 元の募集場所
+        self.category = None         # ゲーム用カテゴリ
+        self.main_ch = None          # 議論チャンネル
+        self.grave_ch = None         # 墓場チャンネル
+        
         self.players = {} 
         self.phase = "WAITING"
-        self.gm_user = None # ★追加: 人間GMのユーザーオブジェクト
+        self.gm_user = None
         
         self.settings = {
-            "mode": "AUTO",    # ★追加: AUTO または MANUAL
+            "mode": "AUTO",
             "lykos": 1, "caeneus": 0,
             "tribbie": 1, "castorice": 1, "sirens": 1,
             "swordmaster": 0, "phainon": 0,
@@ -98,7 +102,6 @@ class GameRoom:
             if r == ROLE_PHAINON: p.vote_weight = 2
             if r == ROLE_MORDIS: p.mordis_revive_available = True
 
-    # マニュアルモードではBotによる勝敗判定は使わないが、補助として残す
     def check_winner(self):
         alive = self.get_alive()
         wolves = len([p for p in alive if p.role == ROLE_LYKOS])
