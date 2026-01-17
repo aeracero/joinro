@@ -132,7 +132,7 @@ class GMControlView(ui.View):
             return False
         return True
 
-# --- Settings ---
+# --- Settings (Updated Labels) ---
 class SettingsModal(ui.Modal, title="配役・システム設定"):
     def __init__(self, room, callback):
         super().__init__()
@@ -143,25 +143,28 @@ class SettingsModal(ui.Modal, title="配役・システム設定"):
         mode_v = "1" if s["mode"] == "MANUAL" else "0"
         close_v = "1" if s["auto_close"] else "0"
         rematch_v = "1" if s["rematch"] else "0"
-        self.inp_sys = ui.TextInput(label="システム: モード,自動閉鎖,続戦(0=OFF/1=ON)", default=f"{mode_v}, {close_v}, {rematch_v}", placeholder="例: 0, 1, 0")
+        self.inp_sys = ui.TextInput(label="システム: モード,閉鎖,続戦(0/1)", default=f"{mode_v}, {close_v}, {rematch_v}", placeholder="0, 1, 0")
         
         def_wolves = f"{s.get('lykos',0)}, {s.get('caeneus',0)}"
-        self.inp_wolves = ui.TextInput(label="人狼陣営: ライコス, カイニス", default=def_wolves)
+        self.inp_wolves = ui.TextInput(label="人狼: ライコス, カイニス", default=def_wolves, placeholder="1, 0")
         
-        def_power = f"{s.get('tribbie',0)}, {s.get('sirens',0)}, {s.get('castorice',0)}"
-        self.inp_power = ui.TextInput(label="村役職: トリビー, セイレンス, キャストリス", default=def_power)
+        # 情報・護衛: 占, 騎, 霊, アグライア
+        def_info = f"{s.get('tribbie',0)}, {s.get('sirens',0)}, {s.get('castorice',0)}, {s.get('aglaea',0)}"
+        self.inp_info = ui.TextInput(label="村: 占, 騎, 霊, アグライア(新)", default=def_info, placeholder="1, 1, 1, 0")
         
-        def_special = f"{s.get('swordmaster',0)}, {s.get('mordis',0)}, {s.get('phainon',0)}"
-        self.inp_special = ui.TextInput(label="特殊・殺: 黒衣, モーディス, ファイノン", default=def_special)
+        # 攻撃・ギャンブル: 剣士, ファイノン, サフェル
+        def_atk = f"{s.get('swordmaster',0)}, {s.get('phainon',0)}, {s.get('saphel',0)}"
+        self.inp_atk = ui.TextInput(label="攻撃: 剣士, 暗殺, サフェル(新)", default=def_atk, placeholder="0, 0, 0")
         
-        def_unique = f"{s.get('cyrene',0)}, {s.get('cerydra',0)}"
-        self.inp_unique = ui.TextInput(label="固有: キュレネ, ケリュドラ", default=def_unique)
+        # 特殊・パッシブ: モーディス, キュレネ, ケリュドラ, ヒアンシー
+        def_sp = f"{s.get('mordis',0)}, {s.get('cyrene',0)}, {s.get('cerydra',0)}, {s.get('hyanci',0)}"
+        self.inp_sp = ui.TextInput(label="特殊: 復活, 全滅, 権力, ヒアンシー(新)", default=def_sp, placeholder="0, 0, 0, 0")
 
         self.add_item(self.inp_sys)
         self.add_item(self.inp_wolves)
-        self.add_item(self.inp_power)
-        self.add_item(self.inp_special)
-        self.add_item(self.inp_unique)
+        self.add_item(self.inp_info)
+        self.add_item(self.inp_atk)
+        self.add_item(self.inp_sp)
 
     def normalize(self, text):
         return unicodedata.normalize('NFKC', text)
@@ -184,15 +187,15 @@ class SettingsModal(ui.Modal, title="配役・システム設定"):
             self.room.settings["rematch"] = True if sys_vals[2] == 1 else False
 
             wolves = self.parse_list(self.inp_wolves.value, 2)
-            power = self.parse_list(self.inp_power.value, 3)
-            special = self.parse_list(self.inp_special.value, 3)
-            unique = self.parse_list(self.inp_unique.value, 2)
+            info = self.parse_list(self.inp_info.value, 4)
+            atk = self.parse_list(self.inp_atk.value, 3)
+            sp = self.parse_list(self.inp_sp.value, 4)
             
             s = self.room.settings
             s["lykos"], s["caeneus"] = wolves[0], wolves[1]
-            s["tribbie"], s["sirens"], s["castorice"] = power[0], power[1], power[2]
-            s["swordmaster"], s["mordis"], s["phainon"] = special[0], special[1], special[2]
-            s["cyrene"], s["cerydra"] = unique[0], unique[1]
+            s["tribbie"], s["sirens"], s["castorice"], s["aglaea"] = info[0], info[1], info[2], info[3]
+            s["swordmaster"], s["phainon"], s["saphel"] = atk[0], atk[1], atk[2]
+            s["mordis"], s["cyrene"], s["cerydra"], s["hyanci"] = sp[0], sp[1], sp[2], sp[3]
             
             self.room.custom_settings = True
             
@@ -200,9 +203,9 @@ class SettingsModal(ui.Modal, title="配役・システム設定"):
             c_str = "閉鎖ON" if s["auto_close"] else "閉鎖OFF"
             r_str = "続戦ON" if s["rematch"] else "続戦OFF"
             
-            await itx.response.send_message(f"✅ 設定更新: {m_str}, {c_str}, {r_str} (カスタム)", ephemeral=True)
+            await itx.response.send_message(f"✅ 設定更新: {m_str}, {c_str}, {r_str} (カスタム配役)", ephemeral=True)
             await self.callback()
-        except: await itx.response.send_message("エラー: 入力形式を確認してください", ephemeral=True)
+        except: await itx.response.send_message("エラー: 数字をカンマ区切りで入力してください", ephemeral=True)
 
 # --- Views ---
 class VoteView(ui.View):
@@ -279,7 +282,6 @@ class CyreneSelfGuardView(ui.View):
     async def skip(self, itx, btn):
         await self.callback(itx, self.player, "cyrene_guard", None)
 
-# ★ヒアンシー用アクションView
 class HyanciActionView(ui.View):
     def __init__(self, room, player, callback):
         super().__init__(timeout=120)
@@ -350,15 +352,11 @@ class WerewolfSystem(commands.Cog):
     async def kill_player_logic(self, room, player):
         if not player.is_alive: return
         
-        # ★ヒアンシーの死亡回避判定
+        # ヒアンシー回避
         if player.role == ROLE_HYANCI and player.hyanci_protection_active:
             if random.random() < 0.5:
-                # 成功
                 if room.main_ch: await room.main_ch.send(f"🦇 **{player.name}** はイカルンの加護により死を免れました！")
-                return # 死なない
-            else:
-                # 失敗
-                pass
+                return 
 
         player.is_alive = False
         
@@ -392,7 +390,6 @@ class WerewolfSystem(commands.Cog):
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
         await target_ch.send("🌙 **夜のアクション** を開始します。")
         
-        # ヒアンシーの保護フラグリセット
         for p in room.players.values():
             p.hyanci_protection_active = False
 
@@ -411,7 +408,6 @@ class WerewolfSystem(commands.Cog):
 
             room.night_actions[act] = tid
             
-            # --- 処理 & 返信 ---
             if act == "cyrene_buff" and target:
                 player.cyrene_buff_count -= 1
                 await itx.response.edit_message(content=f"💪 {t_name} に力を与えました。", view=None)
@@ -495,7 +491,6 @@ class WerewolfSystem(commands.Cog):
                     v2 = NightActionView(room, p, "cyrene_buff", cb)
                     tasks.append(self.bot.get_user(p.id).send("【強化】", view=v2))
             
-            # ★ヒアンシー用のView (追加)
             if p.role == ROLE_HYANCI:
                 if p.hyanci_ikarun_count > 0:
                     v3 = HyanciActionView(room, p, cb)
@@ -503,7 +498,7 @@ class WerewolfSystem(commands.Cog):
                 else:
                     embed = discord.Embed(title="🌙 アクションなし", description="イカルンが尽きているため、アクションはありません。", color=0x2c3e50)
                     tasks.append(self.bot.get_user(p.id).send(embed=embed))
-                    pending_actors.discard(p.id) # 待機リストから外す
+                    pending_actors.discard(p.id)
 
             if not view and p.role not in [ROLE_CYRENE, ROLE_HYANCI]:
                 try:
@@ -768,8 +763,8 @@ class WerewolfSystem(commands.Cog):
                 embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
                 await message.channel.send(embed=embed)
             else:
-                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.5.1 (Beta)", color=0x9b59b6)
-                embed.add_field(name="✨ v0.5.1 更新内容", value="• 🦇 ヒアンシーのイカルン能力実装\n• 🎲 50%生存判定", inline=False)
+                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.5.2 (Beta)", color=0x9b59b6)
+                embed.add_field(name="✨ v0.5.2 更新内容", value="• 🛠️ 設定画面のUI改善(新役職の入力欄を整理)", inline=False)
                 await message.channel.send(embed=embed)
 
     # --- Main Loop Logic ---
