@@ -47,7 +47,7 @@ class GMPlayerActionView(ui.View):
     @ui.button(label="🔍 役職透視", style=discord.ButtonStyle.secondary)
     async def check_role(self, interaction: discord.Interaction, button: ui.Button):
         status = []
-        if self.target.role == ROLE_MORDIS: status.append(f"復活:{'有' if self.target.mordis_revive_available else '無'}")
+        if self.target.mordis_revive_available: status.append("耐久:有") # フラグ自体を確認
         if self.target.role == ROLE_CERYDRA: status.append("x2票")
         if self.target.role == ROLE_CYRENE: status.append(f"自衛:{self.target.cyrene_guard_count} バフ:{self.target.cyrene_buff_count}")
         if self.target.role == ROLE_HYANCI: status.append(f"イカルン:{self.target.hyanci_ikarun_count}")
@@ -287,6 +287,41 @@ class HyanciActionView(ui.View):
     async def skip(self, itx, btn):
         await self.callback(itx, self.player, "hyanci_ikarun", None)
 
+class SaphelActionView(ui.View):
+    def __init__(self, room, player, callback):
+        super().__init__(timeout=120)
+        self.room = room
+        self.player = player
+        self.callback = callback
+        
+        opts1 = []
+        for p in room.get_alive():
+            if p.id != player.id:
+                opts1.append(discord.SelectOption(label=p.name, value=str(p.id)))
+        if not opts1: opts1.append(discord.SelectOption(label="なし", value="none"))
+        
+        self.sel_src = ui.Select(placeholder="🎭 誰の能力を模倣しますか？", options=opts1, row=0)
+        self.add_item(self.sel_src)
+
+        # 2段階目以降はチャットでやるので、ここでは「模倣先」だけ選ぶ
+        # しかし、ターゲット不要な模倣もあるため、ここでは一旦srcだけ選ばせる？
+        # ユーザー要望: "1つ目を選んだら、効果次第で2つ目が出てくるように"
+        # なので、このViewは「模倣先」を選ぶだけにする
+        
+        # self.sel_dst は削除
+
+        self.btn_skip = ui.Button(label="パス (何もしない)", style=discord.ButtonStyle.secondary, row=1)
+        self.btn_skip.callback = self.on_skip
+        self.add_item(self.btn_skip)
+
+    async def on_select_src(self, itx):
+        # Select callback (not used if we rely on menu interaction directly, but discord.py needs callback)
+        # We handle submit in the callback of select
+        pass
+
+    async def on_submit(self, itx):
+        # Selectのcallbackをフックする形にするか、Select自体にcallbackをつける
+        pass
 
 # --- Bot System ---
 class WerewolfSystem(commands.Cog):
@@ -358,18 +393,16 @@ class WerewolfSystem(commands.Cog):
             await room.main_ch.send(f"💀 **{player.name}** が脱落しました。")
             await room.grave_ch.send(f"🪦 **{player.name}** が火種を失い、ここに辿り着きました。")
 
-        # キュレネ道連れ
         if player.role == ROLE_CYRENE or player.mimicking_cyrene:
             if room.main_ch:
-                cause = f"⚠️ **{player.name}** ({ROLE_CYRENE}の力を持つ者) が死亡しました！"
-                await room.main_ch.send(f"{cause}\n禁忌が破られ、オンパロス陣営の火種が全て消滅します...")
+                await room.main_ch.send(f"⚠️ **{player.name}** ({ROLE_CYRENE}) が死亡しました！\n禁忌が破られ、オンパロス陣営の火種が全て消滅します...")
             targets = [p for p in room.get_alive() if p.team == TEAM_AMPHOREUS]
             for t in targets:
                 t.is_alive = False
                 if room.main_ch and room.grave_ch:
                     await room.main_ch.set_permissions(t.member, read_messages=True, send_messages=False)
                     await room.grave_ch.set_permissions(t.member, read_messages=True, send_messages=True)
-                    await room.grave_ch.send(f"🪦 **{t.name}** が道連れとなり消滅しました。")
+                    await room.grave_ch.send(f"🪦 **{t.name}** がキュレネの死に伴い消滅しました。")
         
         return True
 
@@ -418,63 +451,19 @@ class WerewolfSystem(commands.Cog):
             elif isinstance(val, int):
                 t = room.players.get(val)
                 if t: target_name = t.name
-            
-            # --- サフェル模倣の2段階目処理 ---
-            if act == "mimic":
-                if val is None: # Skip
-                    await itx.response.edit_message(content="🎭 スキップしました。", view=None)
-                    pending_actors.discard(player.id)
-                    return
+            elif isinstance(val, dict) and act == "mimic":
+                # サフェル (source -> target)
+                src = room.players.get(val['source'])
+                dst = room.players.get(val['target'])
+                src_name = src.name if src else "なし"
+                dst_name = dst.name if dst else "なし"
+                target_name = f"{src_name} → {dst_name}"
 
-                # 模倣対象を確認して2段階目を出す
-                target = room.players.get(val)
-                if not target:
-                    await itx.response.edit_message(content="⚠️ エラー: 対象不明", view=None)
-                    return
-
-                # 模倣元を保存
-                room.night_actions["mimic_src"] = target.id # 一時保存(キー重複注意だが1人想定)
-                # サフェル自身のIDをキーにして保存するほうが安全だが、今回は簡易実装
-                
-                # ターゲットが必要な役職か？
-                action_map = {
-                    ROLE_TRIBBIE: "🔮 模倣: 誰を占いますか？",
-                    ROLE_SIRENS: "🛡️ 模倣: 誰を護衛しますか？",
-                    ROLE_SWORDMASTER: "⚔️ 模倣: 誰を襲撃しますか？",
-                    ROLE_PHAINON: "🔪 模倣: 誰を暗殺しますか？",
-                    ROLE_AGLAEA: "🧐 模倣: 誰の投票先を調べますか？",
-                    ROLE_SAPHEL: "🎭 模倣の模倣はできません。", # 無効
-                    ROLE_CYRENE: "🐲 模倣: 誰にバフを与えますか？"
-                }
-                
-                if target.role in action_map:
-                    # 2段階目Viewを出す
-                    msg = action_map[target.role]
-                    pending_actors.add(player.id) # 完了していないので維持
-                    await itx.response.edit_message(content=f"🎭 {target.name} ({target.role}) を模倣します。", view=None)
-                    try:
-                        u = self.bot.get_user(player.id)
-                        await u.send(msg, view=NightActionView(room, player, "mimic_2nd", cb))
-                    except: pass
-                else:
-                    # ターゲット不要（人狼、市民、パッシブ等）
-                    await itx.response.edit_message(content=f"🎭 {target.name} ({target.role}) を模倣しました。(追加選択なし)", view=None)
-                    room.night_actions["mimic"] = {'source': target.id, 'target': None}
-                    pending_actors.discard(player.id)
-                return # cb終了
-
-            # --- サフェル模倣2段階目の完了 ---
-            if act == "mimic_2nd":
-                src_id = room.night_actions.get("mimic_src")
-                room.night_actions["mimic"] = {'source': src_id, 'target': val}
-                await itx.response.edit_message(content=f"👉 {target_name} に能力を行使します。", view=None)
-                pending_actors.discard(player.id)
-                return
-
-            # --- キュレネのバフ ---
-            if act == "cyrene_buff" and target:
+            # Responses
+            if act == "cyrene_buff":
                 player.cyrene_buff_count -= 1
                 await itx.response.edit_message(content=f"💪 {target_name} に力を与えました。", view=None)
+                target = room.players.get(val)
                 action_map = {
                     ROLE_LYKOS: ("steal_2nd", "【バフ効果】 2人目の強奪対象を選んでください"),
                     ROLE_TRIBBIE: ("divine_2nd", "【バフ効果】 2人目の占い対象を選んでください"),
@@ -482,7 +471,7 @@ class WerewolfSystem(commands.Cog):
                     ROLE_SWORDMASTER: ("slash_2nd", "【バフ効果】 2人目の辻斬り対象を選んでください"),
                     ROLE_PHAINON: ("assassinate_2nd", "【バフ効果】 2人目の暗殺対象を選んでください")
                 }
-                if target.role in action_map:
+                if target and target.role in action_map:
                     act_key, msg = action_map[target.role]
                     pending_actors.add(target.id) 
                     try:
@@ -515,6 +504,42 @@ class WerewolfSystem(commands.Cog):
                 if not room.prev_votes: vt_name = "（投票履歴なし）"
                 await itx.response.edit_message(content=f"🧐 調査結果: {target_name} の投票先は **{vt_name}** です。", view=None)
 
+            elif act == "mimic":
+                if val is None:
+                    await itx.response.edit_message(content="🎭 スキップしました。", view=None)
+                elif isinstance(val, int):
+                    # 1段階目完了 -> 2段階目へ
+                    target = room.players.get(val)
+                    if not target: return
+                    
+                    room.night_actions["mimic_src"] = val
+                    action_map = {
+                        ROLE_TRIBBIE: "🔮 模倣: 誰を占いますか？",
+                        ROLE_SIRENS: "🛡️ 模倣: 誰を護衛しますか？",
+                        ROLE_SWORDMASTER: "⚔️ 模倣: 誰を襲撃しますか？",
+                        ROLE_PHAINON: "🔪 模倣: 誰を暗殺しますか？",
+                        ROLE_AGLAEA: "🧐 模倣: 誰の投票先を調べますか？",
+                        ROLE_CYRENE: "🐲 模倣: 誰にバフを与えますか？"
+                    }
+                    if target.role in action_map:
+                        msg = action_map[target.role]
+                        await itx.response.edit_message(content=f"🎭 {target.name} ({target.role}) を模倣します。対象を選んでください。", view=None)
+                        pending_actors.add(player.id) # Continue
+                        try:
+                            u = self.bot.get_user(player.id)
+                            await u.send(msg, view=NightActionView(room, player, "mimic_2nd", cb))
+                        except: pass
+                    else:
+                        # No target needed
+                        await itx.response.edit_message(content=f"🎭 {target.name} ({target.role}) を模倣しました。", view=None)
+                        room.night_actions["mimic"] = {'source': val, 'target': None}
+                
+                elif act == "mimic_2nd":
+                    # 2段階目完了
+                    src_id = room.night_actions.get("mimic_src")
+                    room.night_actions["mimic"] = {'source': src_id, 'target': val}
+                    await itx.response.edit_message(content=f"👉 {target_name} に能力を行使します。", view=None)
+
             elif act == "cyrene_guard":
                 if val == "self_guard":
                     player.cyrene_guard_count -= 1
@@ -527,10 +552,17 @@ class WerewolfSystem(commands.Cog):
                 await itx.response.edit_message(content=f"✅ {target_name}を選択 ({act_str})", view=None)
                 if room.gm_user: await room.gm_user.send(f"🌙 {player.name} ({player.role}) -> {target_name}")
 
-            if "_2nd" in act or player.role != ROLE_CYRENE:
+            if "_2nd" in act or (act == "mimic" and isinstance(val, int) and room.players[val].role not in [ROLE_TRIBBIE, ROLE_SIRENS, ROLE_SWORDMASTER, ROLE_PHAINON, ROLE_AGLAEA, ROLE_CYRENE]):
+                # 2回目完了 or ターゲット不要模倣完了
                 pending_actors.discard(player.id)
-            else:
+            elif act == "mimic" and val is None:
+                # Skip
                 pending_actors.discard(player.id)
+            elif player.role != ROLE_CYRENE and act != "mimic":
+                # Regular 1-step action
+                pending_actors.discard(player.id)
+            
+            # Cyrene and Saphel need special handling for pending_actors which is done above
 
         tasks = []
         for p in room.get_alive():
@@ -542,8 +574,41 @@ class WerewolfSystem(commands.Cog):
             elif p.role == ROLE_SWORDMASTER: view=NightActionView(room,p,"slash",cb); msg="【辻斬り】 誰を狙いますか？"
             elif p.role == ROLE_PHAINON: view=NightActionView(room,p,"assassinate",cb); msg="【暗殺】 誰を狙いますか？"
             elif p.role == ROLE_AGLAEA: view=NightActionView(room,p,"investigate",cb); msg="【調査】 誰の投票先を調べますか？"
-            elif p.role == ROLE_SAPHEL: view=NightActionView(room,p,"mimic",cb); msg="【模倣】 誰の能力を模倣しますか？" # 修正: 通常ViewでOK
             
+            if p.role == ROLE_SAPHEL:
+                # サフェルView: 模倣先を選ぶ (NightActionViewでOK, 自分以外を表示)
+                view = NightActionView(room, p, "mimic", cb)
+                # スキップボタンを追加したいがNightActionViewは汎用。
+                # Saphel用だけカスタムするか、NightActionViewにスキップを含めるか。
+                # ここではSaphelActionViewを再利用し、SelectのCallbackでcbを呼ぶ形に修正
+                
+                class SaphelStartView(ui.View):
+                    def __init__(self, room, player, cb):
+                        super().__init__(timeout=120)
+                        self.cb = cb
+                        self.player = player
+                        opts = []
+                        for x in room.get_alive():
+                            if x.id != player.id: opts.append(discord.SelectOption(label=x.name, value=str(x.id)))
+                        if not opts: opts.append(discord.SelectOption(label="なし", value="none"))
+                        
+                        sel = ui.Select(placeholder="🎭 誰の能力を模倣しますか？", options=opts)
+                        sel.callback = self.on_sel
+                        self.add_item(sel)
+                        
+                        btn = ui.Button(label="パス", style=discord.ButtonStyle.secondary)
+                        btn.callback = self.on_skip
+                        self.add_item(btn)
+
+                    async def on_sel(self, itx):
+                        val = int(itx.data['values'][0]) if itx.data['values'][0] != "none" else None
+                        await self.cb(itx, self.player, "mimic", val)
+                    async def on_skip(self, itx):
+                        await self.cb(itx, self.player, "mimic", None)
+
+                view = SaphelStartView(room, p, cb)
+                msg = "【模倣】 誰の能力を使用しますか？"
+
             if view: tasks.append(self.bot.get_user(p.id).send(msg, view=view))
 
             if p.role == ROLE_CYRENE:
@@ -563,7 +628,7 @@ class WerewolfSystem(commands.Cog):
                     tasks.append(self.bot.get_user(p.id).send(embed=embed))
                     pending_actors.discard(p.id)
 
-            if not view and p.role not in [ROLE_CYRENE, ROLE_HYANCI]:
+            if not view and p.role not in [ROLE_CYRENE, ROLE_HYANCI, ROLE_SAPHEL]:
                 try:
                     u = self.bot.get_user(p.id)
                     embed = discord.Embed(title="🌙 静寂の夜", description="今夜、あなたが行えるアクションはありません。", color=0x2c3e50)
@@ -643,11 +708,8 @@ class WerewolfSystem(commands.Cog):
                 elif src.role == ROLE_CYRENE:
                     saphel_actor.mimicking_cyrene = True
                     if dst: # バフ対象がいる場合、その人に2回行動を与える(簡易処理)
-                        if dst.role == ROLE_LYKOS: # 狼ならランダム強奪追加...など
-                            # ここでは省略。バフロジックは night_action_cb で行われるのが理想だが
-                            # サフェルのバフは朝処理になるため、厳密には「次の夜」に効果が出るべきか？
-                            # 今回の仕様では「即時効果」は難しいので、メッセージのみ。
-                            pass
+                        # ...
+                        pass
                     if room.gm_user: await room.gm_user.send("🎭 サフェル -> キュレネ模倣 (呪い付与)")
                 elif src.role == ROLE_HYANCI:
                     saphel_actor.hyanci_protection_active = True
@@ -677,7 +739,7 @@ class WerewolfSystem(commands.Cog):
             victim = room.players.get(tid)
             if victim:
                 if victim.role == ROLE_CYRENE and cy_g == "self_guard": continue
-                if victim.role == ROLE_MORDIS and victim.mordis_revive_available:
+                if victim.mordis_revive_available:
                     victim.mordis_revive_available = False
                 else:
                     dead_candidates.append(victim)
@@ -866,8 +928,8 @@ class WerewolfSystem(commands.Cog):
                 embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
                 await message.channel.send(embed=embed)
             else:
-                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.5.9 (Beta)", color=0x9b59b6)
-                embed.add_field(name="✨ v0.5.9 更新内容", value="• 🎭 サフェルのUI修正 (チャット選択式でエラー回避)", inline=False)
+                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.5.10 (Beta)", color=0x9b59b6)
+                embed.add_field(name="✨ v0.5.10 更新内容", value="• 🛡️ モーディス(模倣含む)の耐久判定修正\n• 🧹 役職初期化処理の厳格化", inline=False)
                 await message.channel.send(embed=embed)
 
     # --- Main Loop Logic ---
