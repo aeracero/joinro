@@ -42,14 +42,14 @@ class GMPlayerActionView(ui.View):
     @ui.button(label="😇 蘇生", style=discord.ButtonStyle.success)
     async def revive_player(self, interaction: discord.Interaction, button: ui.Button):
         await self.system.revive_player_logic(self.room, self.target)
-        await interaction.response.send_message(f"😇 **{self.target.name}** を蘇生しました。", ephemeral=True)
+        await interaction.response.send_message(f"😇 **{self.target.name}** を蘇生しました(スキル回数リセット済)。", ephemeral=True)
 
     @ui.button(label="🔍 役職透視", style=discord.ButtonStyle.secondary)
     async def check_role(self, interaction: discord.Interaction, button: ui.Button):
         status = []
         if self.target.role == ROLE_MORDIS: status.append(f"復活:{'有' if self.target.mordis_revive_available else '無'}")
         if self.target.role == ROLE_CERYDRA: status.append("x2票")
-        if self.target.role == ROLE_CYRENE: status.append(f"自衛:{self.target.cyrene_guard_count}")
+        if self.target.role == ROLE_CYRENE: status.append(f"自衛:{self.target.cyrene_guard_count} バフ:{self.target.cyrene_buff_count}")
         if self.target.role == ROLE_HYANCI: status.append(f"イカルン:{self.target.hyanci_ikarun_count}")
         status_str = f" ({', '.join(status)})" if status else ""
         msg = f"👤 **{self.target.name}**\n役職: **{self.target.role}**\n状態: {'🟢生存' if self.target.is_alive else '💀死亡'}{status_str}"
@@ -132,7 +132,7 @@ class GMControlView(ui.View):
             return False
         return True
 
-# --- Settings (Updated Labels) ---
+# --- Settings ---
 class SettingsModal(ui.Modal, title="配役・システム設定"):
     def __init__(self, room, callback):
         super().__init__()
@@ -143,22 +143,19 @@ class SettingsModal(ui.Modal, title="配役・システム設定"):
         mode_v = "1" if s["mode"] == "MANUAL" else "0"
         close_v = "1" if s["auto_close"] else "0"
         rematch_v = "1" if s["rematch"] else "0"
-        self.inp_sys = ui.TextInput(label="システム: モード,閉鎖,続戦(0/1)", default=f"{mode_v}, {close_v}, {rematch_v}", placeholder="0, 1, 0")
+        self.inp_sys = ui.TextInput(label="システム: モード,閉鎖,続戦(0/1)", default=f"{mode_v}, {close_v}, {rematch_v}", placeholder="例: 0, 1, 0")
         
         def_wolves = f"{s.get('lykos',0)}, {s.get('caeneus',0)}"
         self.inp_wolves = ui.TextInput(label="人狼: ライコス, カイニス", default=def_wolves, placeholder="1, 0")
         
-        # 情報・護衛: 占, 騎, 霊, アグライア
         def_info = f"{s.get('tribbie',0)}, {s.get('sirens',0)}, {s.get('castorice',0)}, {s.get('aglaea',0)}"
-        self.inp_info = ui.TextInput(label="村: 占, 騎, 霊, アグライア(新)", default=def_info, placeholder="1, 1, 1, 0")
+        self.inp_info = ui.TextInput(label="村: 占, 騎, 霊, アグライア", default=def_info, placeholder="1, 1, 1, 0")
         
-        # 攻撃・ギャンブル: 剣士, ファイノン, サフェル
         def_atk = f"{s.get('swordmaster',0)}, {s.get('phainon',0)}, {s.get('saphel',0)}"
-        self.inp_atk = ui.TextInput(label="攻撃: 剣士, 暗殺, サフェル(新)", default=def_atk, placeholder="0, 0, 0")
+        self.inp_atk = ui.TextInput(label="攻撃: 剣士, 暗殺, サフェル", default=def_atk, placeholder="0, 0, 0")
         
-        # 特殊・パッシブ: モーディス, キュレネ, ケリュドラ, ヒアンシー
         def_sp = f"{s.get('mordis',0)}, {s.get('cyrene',0)}, {s.get('cerydra',0)}, {s.get('hyanci',0)}"
-        self.inp_sp = ui.TextInput(label="特殊: 復活, 全滅, 権力, ヒアンシー(新)", default=def_sp, placeholder="0, 0, 0, 0")
+        self.inp_sp = ui.TextInput(label="特殊: モーディス,キュレネ,ケリュドラ,ヒアンシー", default=def_sp, placeholder="0, 0, 0, 0")
 
         self.add_item(self.inp_sys)
         self.add_item(self.inp_wolves)
@@ -205,7 +202,7 @@ class SettingsModal(ui.Modal, title="配役・システム設定"):
             
             await itx.response.send_message(f"✅ 設定更新: {m_str}, {c_str}, {r_str} (カスタム配役)", ephemeral=True)
             await self.callback()
-        except: await itx.response.send_message("エラー: 数字をカンマ区切りで入力してください", ephemeral=True)
+        except: await itx.response.send_message("エラー: 入力形式を確認してください", ephemeral=True)
 
 # --- Views ---
 class VoteView(ui.View):
@@ -350,13 +347,16 @@ class WerewolfSystem(commands.Cog):
         except: pass
 
     async def kill_player_logic(self, room, player):
-        if not player.is_alive: return
+        if not player.is_alive: return False
         
         # ヒアンシー回避
         if player.role == ROLE_HYANCI and player.hyanci_protection_active:
             if random.random() < 0.5:
-                if room.main_ch: await room.main_ch.send(f"🦇 **{player.name}** はイカルンの加護により死を免れました！")
-                return 
+                try:
+                    u = self.bot.get_user(player.id)
+                    await u.send("🦇 **イカルン** の加護により死を免れました！")
+                except: pass
+                return False 
 
         player.is_alive = False
         
@@ -376,14 +376,29 @@ class WerewolfSystem(commands.Cog):
                     await room.main_ch.set_permissions(t.member, read_messages=True, send_messages=False)
                     await room.grave_ch.set_permissions(t.member, read_messages=True, send_messages=True)
                     await room.grave_ch.send(f"🪦 **{t.name}** がキュレネの死に伴い消滅しました。")
+        
+        return True
 
+    # ★GM蘇生処理: スキルカウントもリセット
     async def revive_player_logic(self, room, player):
         if player.is_alive: return
         player.is_alive = True
+        
+        # Reset Counters
+        if player.role == ROLE_MORDIS: player.mordis_revive_available = True
+        if player.role == ROLE_CYRENE: 
+            player.cyrene_guard_count = 1
+            player.cyrene_buff_count = 2
+        if player.role == ROLE_HYANCI:
+            player.hyanci_ikarun_count = 2
+            player.hyanci_protection_active = False
+        if player.role == ROLE_SIRENS:
+            player.last_guarded_id = None
+
         if room.main_ch and room.grave_ch:
             await room.main_ch.set_permissions(player.member, read_messages=True, send_messages=True)
             await room.grave_ch.set_permissions(player.member, overwrite=None)
-            await room.main_ch.send(f"😇 奇跡が起き、**{player.name}** の火種が戻りました！")
+            await room.main_ch.send(f"😇 奇跡が起き、**{player.name}** の火種が戻りました！（能力も全快）")
             await room.grave_ch.send(f"😇 **{player.name}** が蘇生され、戦場へ戻りました。")
 
     async def start_night_logic(self, room):
@@ -538,13 +553,13 @@ class WerewolfSystem(commands.Cog):
         saphel_actor = next((p for p in room.get_alive() if p.role == ROLE_SAPHEL), None)
         saphel_attack = None
         saphel_guard = None
-        dead = []
+        dead_candidates = []
 
         if saphel_actor and saphel_id:
             target = room.players.get(saphel_id)
             if target:
                 if target.role == ROLE_LYKOS:
-                    dead.append(saphel_actor)
+                    dead_candidates.append(saphel_actor)
                     if room.gm_user: await room.gm_user.send(f"🎭 サフェルが人狼を模倣し、死亡しました。")
                 elif target.role == ROLE_SIRENS: saphel_guard = saphel_id
                 elif target.role in [ROLE_SWORDMASTER, ROLE_PHAINON]: saphel_attack = saphel_id
@@ -582,7 +597,7 @@ class WerewolfSystem(commands.Cog):
                 if victim.role == ROLE_MORDIS and victim.mordis_revive_available:
                     victim.mordis_revive_available = False
                 else:
-                    dead.append(victim)
+                    dead_candidates.append(victim)
         
         phainon_player = next((p for p in room.get_alive() if p.role == ROLE_PHAINON), None)
         if phainon_player:
@@ -590,15 +605,18 @@ class WerewolfSystem(commands.Cog):
                 target_p = room.players.get(ph_tid)
                 if target_p:
                     if target_p.is_wolf_side or target_p.team == TEAM_SWORDMASTER:
-                        if target_p not in dead: dead.append(target_p)
+                        if target_p not in dead_candidates: dead_candidates.append(target_p)
                     else:
-                        if target_p not in dead: dead.append(target_p)
-                        if phainon_player not in dead: dead.append(phainon_player)
+                        if target_p not in dead_candidates: dead_candidates.append(target_p)
+                        if phainon_player not in dead_candidates: dead_candidates.append(phainon_player)
 
-        for d in list(set(dead)):
-            await self.kill_player_logic(room, d)
+        # ★死亡確定リスト (イカルン生存者は除外される)
+        actually_dead = []
+        for d in list(set(dead_candidates)):
+            is_dead = await self.kill_player_logic(room, d)
+            if is_dead: actually_dead.append(d)
         
-        msg = f"🌞 **朝が来ました**\n" + (f"{', '.join([d.name for d in dead])} が無惨な姿で発見されました。" if dead else "昨晩は犠牲者がいませんでした。")
+        msg = f"🌞 **朝が来ました**\n" + (f"{', '.join([d.name for d in actually_dead])} が無惨な姿で発見されました。" if actually_dead else "昨晩は犠牲者がいませんでした。")
         await target_ch.send(msg)
 
         if room.check_winner():
@@ -656,11 +674,16 @@ class WerewolfSystem(commands.Cog):
             final_target_id = candidates[0]
             executed_player = room.players.get(final_target_id)
             if executed_player:
-                await self.kill_player_logic(room, executed_player)
-                room.last_executed = executed_player 
-                if executed_player.role == ROLE_CYRENE:
-                    room.cyrene_executed = True
-                    await target_ch.send(f"⚠️ 処刑された **{executed_player.name}** は... **{ROLE_CYRENE}** でした！！\n禁忌に触れたため、オンパロス陣営は敗北となります。")
+                # 処刑実行
+                is_dead = await self.kill_player_logic(room, executed_player)
+                if is_dead:
+                    room.last_executed = executed_player
+                    if executed_player.role == ROLE_CYRENE:
+                        room.cyrene_executed = True
+                        await target_ch.send(f"⚠️ 処刑された **{executed_player.name}** は... **{ROLE_CYRENE}** でした！！\n禁忌に触れたため、オンパロス陣営は敗北となります。")
+                else:
+                    # イカルンなどで生存した場合
+                    await target_ch.send(f"⚠️ **{executed_player.name}** は処刑台に上がりましたが、奇跡的に生還しました！")
             else:
                 await target_ch.send("エラー: 対象が見つかりません。")
         
@@ -763,8 +786,8 @@ class WerewolfSystem(commands.Cog):
                 embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
                 await message.channel.send(embed=embed)
             else:
-                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.5.2 (Beta)", color=0x9b59b6)
-                embed.add_field(name="✨ v0.5.2 更新内容", value="• 🛠️ 設定画面のUI改善(新役職の入力欄を整理)", inline=False)
+                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.5.4 (Beta)", color=0x9b59b6)
+                embed.add_field(name="✨ v0.5.4 更新内容", value="• 🛠️ GM蘇生時のスキルリセット機能", inline=False)
                 await message.channel.send(embed=embed)
 
     # --- Main Loop Logic ---
