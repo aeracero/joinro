@@ -27,7 +27,7 @@ ROLE_DATA = {
     ROLE_PHAINON: {"desc": "暗殺者。敵を殺せるが味方だと自爆。", "has_ability": True},
     ROLE_SWORDMASTER: {"desc": "辻斬り(第3陣営)。生存勝利。", "has_ability": True},
     ROLE_MORDIS: {"desc": "1回襲撃を耐える。", "has_ability": False},
-    ROLE_CYRENE: {"desc": "死ぬと村全滅。自衛1回/バフ1回。", "has_ability": True}, # ★変更
+    ROLE_CYRENE: {"desc": "死ぬと村全滅。自衛1回/バフ2回。", "has_ability": True},
     ROLE_CERYDRA: {"desc": "権力者。投票が2票分になる。", "has_ability": False},
     ROLE_AGLAEA: {"desc": "調査員。昨日の投票先を見れる。", "has_ability": True},
     ROLE_SAPHEL: {"desc": "模倣者。相手の能力を使う(狼は死)。", "has_ability": True},
@@ -46,15 +46,18 @@ class Player:
         self.name = member.display_name
         self.role = ROLE_CITIZEN
         self.is_alive = True
-        self.mordis_revive_available = True
+        self.mordis_revive_available = False
         
         # キュレネ用
         self.cyrene_guard_count = 1
-        self.cyrene_buff_count = 1  # ★変更: 2 -> 1
+        self.cyrene_buff_count = 2
         
         # ヒアンシー用
         self.hyanci_ikarun_count = 2
         self.hyanci_protection_active = False
+        
+        # サフェル用
+        self.mimicking_cyrene = False 
         
         self.last_guarded_id = None
         self.vote_weight = 1
@@ -129,20 +132,25 @@ class GameRoom:
         self.grave_ch = None
         for p in self.players.values():
             p.is_alive = True
-            p.mordis_revive_available = True
+            p.mordis_revive_available = False
             p.cyrene_guard_count = 1
-            p.cyrene_buff_count = 1 # ★変更
+            p.cyrene_buff_count = 2
             p.hyanci_ikarun_count = 2
             p.hyanci_protection_active = False
+            p.mimicking_cyrene = False
             p.last_guarded_id = None
             p.vote_weight = 1
+            
+            # 役職ごとの再設定
+            if p.role == ROLE_CERYDRA: p.vote_weight = 2
+            if p.role == ROLE_MORDIS: p.mordis_revive_available = True
+            if p.role == ROLE_SAPHEL: p.cyrene_buff_count = 1
 
     def get_recommended_settings(self, count):
         s = self.settings.copy()
         for k in list(s.keys()):
             if k not in ["mode", "auto_close", "rematch", "discussion_time"]:
                 s[k] = 0
-        
         if count <= 3: s["lykos"] = 1
         elif count == 4: s["lykos"] = 1; s["tribbie"] = 1
         elif count == 5: s["lykos"] = 1; s["tribbie"] = 1; s["sirens"] = 1
@@ -184,14 +192,23 @@ class GameRoom:
         random.shuffle(roles)
         for p, r in zip(all_players, roles):
             p.role = r
+            # 初期化
+            p.mordis_revive_available = False
+            p.cyrene_guard_count = 1
+            p.cyrene_buff_count = 0
+            p.hyanci_ikarun_count = 2
+            p.hyanci_protection_active = False
+            p.mimicking_cyrene = False
+            p.vote_weight = 1
+
+            # 役職別設定
             if r == ROLE_CERYDRA: p.vote_weight = 2
             if r == ROLE_MORDIS: p.mordis_revive_available = True
             
-            # 初期化
-            p.cyrene_guard_count = 1
-            p.cyrene_buff_count = 1 # ★変更
-            p.hyanci_ikarun_count = 2
-            p.hyanci_protection_active = False
+            if r == ROLE_CYRENE:
+                p.cyrene_buff_count = 2
+            elif r == ROLE_SAPHEL:
+                p.cyrene_buff_count = 1
 
     def check_winner(self):
         alive = self.get_alive()
