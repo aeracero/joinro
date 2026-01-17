@@ -149,13 +149,11 @@ class SettingsModal(ui.Modal, title="配役・システム設定"):
         def_power = f"{s.get('tribbie',0)}, {s.get('sirens',0)}, {s.get('castorice',0)}"
         self.inp_power = ui.TextInput(label="村役職: トリビー, セイレンス, キャストリス", default=def_power)
         
-        # 特殊・殺人鬼 (黒衣, モーディス, ファイノン)
         def_special = f"{s.get('swordmaster',0)}, {s.get('mordis',0)}, {s.get('phainon',0)}"
-        self.inp_special = ui.TextInput(label="特殊・殺: 黒衣, モーディス, ファイノン", default=def_special, placeholder="例: 1, 0, 1")
+        self.inp_special = ui.TextInput(label="特殊・殺: 黒衣, モーディス, ファイノン", default=def_special)
         
-        # 固有・パッシブ (キュレネ, ケリュドラ)
         def_unique = f"{s.get('cyrene',0)}, {s.get('cerydra',0)}"
-        self.inp_unique = ui.TextInput(label="固有: キュレネ, ケリュドラ", default=def_unique, placeholder="例: 0, 0")
+        self.inp_unique = ui.TextInput(label="固有: キュレネ, ケリュドラ", default=def_unique)
 
         self.add_item(self.inp_sys)
         self.add_item(self.inp_wolves)
@@ -328,12 +326,10 @@ class WerewolfSystem(commands.Cog):
             await room.main_ch.send(f"😇 奇跡が起き、**{player.name}** の火種が戻りました！")
             await room.grave_ch.send(f"😇 **{player.name}** が蘇生され、戦場へ戻りました。")
 
-    # --- Night Logic (Updated) ---
     async def start_night_logic(self, room):
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
         await target_ch.send("🌙 **夜のアクション** を開始します。")
         
-        # ファイノンも能動アクションに追加
         active_roles = [ROLE_LYKOS, ROLE_TRIBBIE, ROLE_SIRENS, ROLE_SWORDMASTER, ROLE_PHAINON]
         pending_actors = set([p.id for p in room.get_alive() if p.role in active_roles])
         room.night_actions = {}
@@ -383,13 +379,31 @@ class WerewolfSystem(commands.Cog):
     async def resolve_morning(self, room):
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
         
-        st = room.night_actions.get("steal") # 狼
-        gt = room.night_actions.get("guard") # 騎士
-        sl = room.night_actions.get("slash") # 剣士
-        ph_target_id = room.night_actions.get("assassinate") # ファイノン
+        # --- キャストリス（霊媒）への通知 (★追加) ---
+        if room.last_executed:
+            mediums = [p for p in room.get_alive() if p.role == ROLE_CASTORICE]
+            species = "ライコス (人狼)" if room.last_executed.is_wolf_side else "人間"
+            
+            for medium in mediums:
+                try:
+                    u = self.bot.get_user(medium.id)
+                    if u:
+                        embed = discord.Embed(title="👻 霊媒結果", description=f"昨日処刑された **{room.last_executed.name}** の正体は...", color=0x9b59b6)
+                        embed.add_field(name="判定", value=f"**{species}** でした。", inline=False)
+                        await u.send(embed=embed)
+                except: pass
+            
+            # 通知が終わったらリセット
+            room.last_executed = None
+
+        # --- 襲撃・アクション処理 ---
+        st = room.night_actions.get("steal")
+        gt = room.night_actions.get("guard")
+        sl = room.night_actions.get("slash")
+        ph_target_id = room.night_actions.get("assassinate")
         
         dead = []
-        targets = set([x for x in [st, sl] if x]) # 通常襲撃
+        targets = set([x for x in [st, sl] if x])
         
         # 通常処理
         for tid in targets:
@@ -403,21 +417,17 @@ class WerewolfSystem(commands.Cog):
         
         # ファイノンの特殊処理
         if ph_target_id:
-            # ファイノン自身を探す
             phainon_player = next((p for p in room.get_alive() if p.role == ROLE_PHAINON), None)
             target_player = room.players.get(ph_target_id)
             
             if phainon_player and target_player:
-                # 敵対陣営(狼 or 剣士)なら相手だけ死ぬ
                 if target_player.is_wolf_side or target_player.team == TEAM_SWORDMASTER:
                     if target_player not in dead: dead.append(target_player)
                 else:
-                    # 味方(村)なら両方死ぬ
                     if target_player not in dead: dead.append(target_player)
                     if phainon_player not in dead: dead.append(phainon_player)
                     if room.gm_user: await room.gm_user.send("⚠️ ファイノンが味方を攻撃し、自爆しました。")
 
-        # 重複削除して実行
         for d in list(set(dead)):
             await self.kill_player_logic(room, d)
         
@@ -470,16 +480,15 @@ class WerewolfSystem(commands.Cog):
         max_votes = max(tally.values())
         candidates = [t for t, count in tally.items() if count == max_votes]
 
-        # スキップまたは同数票
         if "skip" in candidates or len(candidates) > 1:
             reason = "スキップ多数" if "skip" in candidates else "同数票"
             await target_ch.send(f"投票の結果、**{reason}** となりました。\n本日の処刑は見送られます。")
         else:
-            final_target_id = candidates[0] # 1人だけのはず
+            final_target_id = candidates[0]
             executed_player = room.players.get(final_target_id)
             if executed_player:
                 await self.kill_player_logic(room, executed_player)
-                room.last_executed = executed_player
+                room.last_executed = executed_player # ★ここで保存され、翌朝 resolve_morning で参照される
                 if executed_player.role == ROLE_CYRENE:
                     room.cyrene_executed = True
                     await target_ch.send(f"⚠️ 処刑された **{executed_player.name}** は... **{ROLE_CYRENE}** でした！！\n禁忌に触れたため、オンパロス陣営は敗北となります。")
@@ -585,8 +594,8 @@ class WerewolfSystem(commands.Cog):
                 embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
                 await message.channel.send(embed=embed)
             else:
-                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.4 (Beta)", color=0x9b59b6)
-                embed.add_field(name="✨ v0.4 更新内容", value="• 🐲 新職「ケリュドラ」実装\n• 🗡️ ファイノンの能力変更（暗殺/自爆）\n• 🗳️ 投票同数は処刑スキップに変更", inline=False)
+                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.4.1 (Beta)", color=0x9b59b6)
+                embed.add_field(name="✨ v0.4.1 更新内容", value="• 👻 霊媒師(キャストリス)の結果通知機能を追加\n• 🐛 終了処理の安定化", inline=False)
                 await message.channel.send(embed=embed)
 
     # --- Main Loop Logic ---
@@ -624,9 +633,8 @@ class WerewolfSystem(commands.Cog):
                         note = "(カスタム)"
                     m_txt = "手動" if s["mode"]=="MANUAL" else "全自動"
                     role_str = (
-                        f"🐺{s_display['lykos']} 狂{s_display['caeneus']} 🔮{s_display['tribbie']} 👻{s_display['castorice']}\n"
-                        f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']}\n"
-                        f"💣{s_display['cyrene']} 🔪{s_display['phainon']} 🐲{s_display['cerydra']}"
+                        f"🐺{s_display['lykos']} 狂{s_display['caeneus']} 🔮{s_display['tribbie']} 👻{s_display['castorice']} "
+                        f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']} 💣{s_display['cyrene']} 👮{s_display['phainon']} 🐲{s_display['cerydra']}"
                     )
                     sys_str = f"閉鎖:{'ON' if s['auto_close'] else 'OFF'}, 続戦:{'ON' if s['rematch'] else 'OFF'}"
                     embed = discord.Embed(title="参加者募集中", description=f"{m_txt} {note}\n{sys_str}\n{role_str}", color=0x9b59b6)
