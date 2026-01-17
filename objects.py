@@ -12,6 +12,7 @@ ROLE_PHAINON = "ファイノン"
 ROLE_SWORDMASTER = "黒衣の剣士"
 ROLE_MORDIS = "モーディス"
 ROLE_CYRENE = "キュレネ"
+ROLE_CERYDRA = "ケリュドラ" # ★新規追加
 
 ROLE_DATA = {
     ROLE_CITIZEN: {"desc": "能力なし。推理で戦う市民。", "has_ability": False},
@@ -20,10 +21,11 @@ ROLE_DATA = {
     ROLE_TRIBBIE: {"desc": "占い師。正体を見抜く。", "has_ability": True},
     ROLE_CASTORICE: {"desc": "霊媒師。昨日の処刑者の正体を知る。", "has_ability": False},
     ROLE_SIRENS: {"desc": "騎士。襲撃から護衛する。", "has_ability": True},
-    ROLE_PHAINON: {"desc": "投票が2票分になる。", "has_ability": False},
+    ROLE_PHAINON: {"desc": "暗殺者。夜に一人を襲撃可能だが、味方を襲うと自分も死ぬ。", "has_ability": True}, # ★変更
     ROLE_SWORDMASTER: {"desc": "辻斬り(第3陣営)。生存勝利。", "has_ability": True},
     ROLE_MORDIS: {"desc": "1回襲撃を耐える。", "has_ability": False},
-    ROLE_CYRENE: {"desc": "処刑されると村敗北。", "has_ability": False}
+    ROLE_CYRENE: {"desc": "処刑されると村敗北。", "has_ability": False},
+    ROLE_CERYDRA: {"desc": "権力者。投票が2票分になる。", "has_ability": False} # ★変更(継承)
 }
 
 TEAM_AMPHOREUS = "オンパロス陣営"
@@ -65,13 +67,14 @@ class GameRoom:
 
         self.settings = {
             "mode": "AUTO",
-            "auto_close": True, # ★追加: 自動閉鎖
-            "rematch": False,   # ★追加: 続戦
+            "auto_close": True,
+            "rematch": False,
             
             "lykos": 1, "caeneus": 0,
             "tribbie": 1, "castorice": 1, "sirens": 1,
             "swordmaster": 0, "phainon": 0,
             "mordis": 0, "cyrene": 0,
+            "cerydra": 0, # ★追加
             "discussion_time": 60
         }
         
@@ -94,7 +97,6 @@ class GameRoom:
     def get_alive(self):
         return [p for p in self.players.values() if p.is_alive]
 
-    # ★続戦用リセット
     def reset_for_rematch(self):
         self.phase = "WAITING"
         self.night_actions = {}
@@ -105,19 +107,16 @@ class GameRoom:
         self.category = None
         self.main_ch = None
         self.grave_ch = None
-        
-        # プレイヤー状態リセット
         for p in self.players.values():
             p.is_alive = True
             p.mordis_revive_available = True
             p.vote_weight = 1
-            # roleはassign_rolesで再抽選されるのでそのままでOK
 
     def get_recommended_settings(self, count):
         s = self.settings.copy()
-        # 役職数のみリセット(システム設定は維持)
-        for k in ["lykos", "caeneus", "tribbie", "castorice", "sirens", "swordmaster", "phainon", "mordis", "cyrene"]:
-            s[k] = 0
+        for k in list(s.keys()):
+            if k not in ["mode", "auto_close", "rematch", "discussion_time"]:
+                s[k] = 0
         
         if count <= 3:
             s["lykos"] = 1
@@ -129,10 +128,10 @@ class GameRoom:
             s["lykos"] = 1; s["caeneus"] = 1; s["tribbie"] = 1; s["sirens"] = 1
         elif count == 7:
             s["lykos"] = 2; s["tribbie"] = 1; s["sirens"] = 1; s["castorice"] = 1
-        elif count >= 8:
+        elif count == 8:
             s["lykos"] = 2; s["caeneus"] = 1; s["tribbie"] = 1; s["sirens"] = 1; s["castorice"] = 1
         if count >= 9:
-            s["swordmaster"] = 1
+            s["swordmaster"] = 1; s["phainon"] = 1 # 特殊職を入れる
         
         return s
 
@@ -142,7 +141,6 @@ class GameRoom:
         
         if not self.custom_settings:
             rec = self.get_recommended_settings(len(all_players))
-            # システム設定は上書きせず、役職数だけ更新
             for k in rec.keys():
                 if k not in ["mode", "auto_close", "rematch", "discussion_time"]:
                     self.settings[k] = rec[k]
@@ -158,6 +156,7 @@ class GameRoom:
         roles.extend([ROLE_PHAINON]*s["phainon"])
         roles.extend([ROLE_MORDIS]*s["mordis"])
         roles.extend([ROLE_CYRENE]*s["cyrene"])
+        roles.extend([ROLE_CERYDRA]*s["cerydra"]) # ★追加
         
         if len(roles) > len(all_players): roles = roles[:len(all_players)]
         else: roles.extend([ROLE_CITIZEN] * (len(all_players) - len(roles)))
@@ -165,7 +164,7 @@ class GameRoom:
         random.shuffle(roles)
         for p, r in zip(all_players, roles):
             p.role = r
-            if r == ROLE_PHAINON: p.vote_weight = 2
+            if r == ROLE_CERYDRA: p.vote_weight = 2 # ★ケリュドラが2票
             if r == ROLE_MORDIS: p.mordis_revive_available = True
 
     def check_winner(self):
