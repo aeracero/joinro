@@ -22,7 +22,7 @@ class Launcher(ui.View):
         else:
             await interaction.response.send_message("システムエラー: Botを再起動してください。", ephemeral=True)
 
-# --- GM用: プレイヤー操作関連 ---
+# --- GM Views ---
 class GMPlayerActionView(ui.View):
     def __init__(self, room, target_player, system):
         super().__init__(timeout=60)
@@ -118,7 +118,7 @@ class GMControlView(ui.View):
             return False
         return True
 
-# --- 設定モーダル ---
+# --- Settings ---
 class SettingsModal(ui.Modal, title="設定"):
     def __init__(self, room, callback):
         super().__init__()
@@ -149,7 +149,7 @@ class SettingsModal(ui.Modal, title="設定"):
             await self.callback()
         except: await itx.response.send_message("エラー", ephemeral=True)
 
-# --- 投票View ---
+# --- Vote/Action Views ---
 class VoteView(ui.View):
     def __init__(self, room, player, system):
         super().__init__(timeout=None)
@@ -192,6 +192,7 @@ class VoteView(ui.View):
             await self.tally_votes()
 
     async def tally_votes(self):
+        # 多重実行防止
         if hasattr(self.room, "vote_finished") and self.room.vote_finished: return
         self.room.vote_finished = True
 
@@ -229,7 +230,6 @@ class VoteView(ui.View):
             else:
                 await target_ch.send("エラー: 対象が見つかりません。")
 
-# --- Night Action View ---
 class NightActionView(ui.View):
     def __init__(self, room, player, action_type, callback):
         super().__init__(timeout=120)
@@ -261,7 +261,6 @@ class WerewolfSystem(commands.Cog):
     async def setup_venue(self, room):
         guild = room.lobby_channel.guild
         
-        # 1. カテゴリ作成 (Bot, GMのみ)
         cat_ov = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
             guild.me: discord.PermissionOverwrite(read_messages=True)
@@ -273,45 +272,47 @@ class WerewolfSystem(commands.Cog):
             cat_name = f"⚔️ オンパロス戦線-{random.randint(100,999)}"
             room.category = await guild.create_category(cat_name, overwrites=cat_ov)
             
-            # 2. 議論ch (メイン)
-            # 生存者全員を追加
+            # 議論ch (メイン)
             main_ov = cat_ov.copy()
             for p in room.players.values():
                 main_ov[p.member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
             
             room.main_ch = await room.category.create_text_channel("🌞議論-day", overwrites=main_ov)
             
-            # 3. 墓場ch
-            # 最初は誰も死んでいないので、BotとGMのみ
+            # 墓場ch
             grave_ov = cat_ov.copy()
             room.grave_ch = await room.category.create_text_channel("🪦墓場-graveyard", overwrites=grave_ov)
             
-            await room.main_ch.send(f"{len(room.players)}名の英雄たちよ、ここが戦場だ。\n火種を奪われた者はここでの発言権を失い、墓場へ送られる。")
+            await room.main_ch.send(f"{len(room.players)}名の英雄たちよ、ここが戦場だ。\n火種を奪われた者はここから姿を消し、墓場へ送られる。")
             
         except Exception as e:
             await room.lobby_channel.send(f"⚠️ 会場作成エラー: {e}")
             room.phase = "CANCELLED"
 
     async def cleanup_venue(self, room):
-        if room.main_ch: await room.main_ch.delete()
-        if room.grave_ch: await room.grave_ch.delete()
-        if room.category: await room.category.delete()
+        # エラーハンドリング追加：既に消えていてもエラーを吐かないようにする
+        try:
+            if room.main_ch: await room.main_ch.delete()
+        except: pass
+        try:
+            if room.grave_ch: await room.grave_ch.delete()
+        except: pass
+        try:
+            if room.category: await room.category.delete()
+        except: pass
 
-    # ★死亡処理 (権限書き換え)
+    # 死亡処理
     async def kill_player_logic(self, room, player):
         if not player.is_alive: return
         player.is_alive = False
         
         if room.main_ch and room.grave_ch:
-            # 議論ch: 閲覧のみ可 (書き込み不可)
-            # read_messages=True, send_messages=False に変更
-            await room.main_ch.set_permissions(player.member, read_messages=True, send_messages=False)
-            
-            # 墓場ch: 見える＆書ける
+            # 議論ch: 見えなくする
+            await room.main_ch.set_permissions(player.member, read_messages=False, send_messages=False)
+            # 墓場ch: 見えるようにする
             await room.grave_ch.set_permissions(player.member, read_messages=True, send_messages=True)
             
-            # 通知
-            await room.main_ch.send(f"💀 **{player.name}** が脱落しました。（以降、発言はできません）")
+            await room.main_ch.send(f"💀 **{player.name}** が脱落しました。")
             await room.grave_ch.send(f"🪦 **{player.name}** が火種を失い、ここに辿り着きました。")
 
     # --- Commands ---
@@ -405,6 +406,23 @@ class WerewolfSystem(commands.Cog):
             if view: tasks.append(self.bot.get_user(p.id).send(msg, view=view))
         await asyncio.gather(*tasks)
 
+    # --- Listener ---
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if message.author.bot: return
+        if self.bot.user in message.mentions:
+            if message.channel.id in self.rooms:
+                room = self.rooms[message.channel.id]
+                alive_list = [p.name for p in room.players.values() if p.is_alive]
+                dead_list = [p.name for p in room.players.values() if not p.is_alive]
+                embed = discord.Embed(title="📊 現在の戦況", color=0x2ecc71)
+                embed.add_field(name=f"🟢 生存 ({len(alive_list)})", value="\n".join(alive_list) or "なし", inline=True)
+                embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
+                await message.channel.send(embed=embed)
+            else:
+                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.2", color=0x9b59b6)
+                await message.channel.send(embed=embed)
+
     # --- Logic ---
     async def create_room_logic(self, itx_or_ctx):
         channel = None
@@ -418,6 +436,7 @@ class WerewolfSystem(commands.Cog):
             user = itx_or_ctx.author
         if channel is None: return
 
+        # 既存ルームチェック
         if channel.id in self.rooms:
             if not isinstance(itx_or_ctx, discord.Interaction): await channel.send("既に部屋があります。")
             return
@@ -470,6 +489,7 @@ class WerewolfSystem(commands.Cog):
         msg = await channel.send(embed=discord.Embed(title="待機中..."), view=view)
         await update_panel()
 
+        # ロビー待機ループ
         while room.phase == "WAITING":
             await asyncio.sleep(1)
             if room.phase == "CANCELLED":
@@ -477,10 +497,26 @@ class WerewolfSystem(commands.Cog):
                 return
             if room.phase == "STARTING": break
         
+        # 会場作成
         await self.setup_venue(room)
-        if room.phase == "CANCELLED": return
+        # 会場作成中に解散された場合のケア
+        if room.phase == "CANCELLED":
+             await self.cleanup_venue(room)
+             if channel.id in self.rooms: del self.rooms[channel.id]
+             return
 
-        await self.run_game(channel.id)
+        # ゲーム実行を try...finally で囲んで確実に削除
+        try:
+            await self.run_game(channel.id)
+        except Exception as e:
+            await channel.send(f"⚠️ ゲーム実行エラー: {e}")
+        finally:
+            # 終了後処理（cleanup_venue は run_game 内で呼ばれる想定だが、
+            # 念のためここでも呼んでおくのが安全）
+            if channel.id in self.rooms:
+                r = self.rooms[channel.id]
+                await self.cleanup_venue(r)
+                del self.rooms[channel.id]
 
     async def run_game(self, channel_id):
         room = self.rooms[channel_id]
@@ -503,11 +539,11 @@ class WerewolfSystem(commands.Cog):
                     try: await u.send(f"役職: **{p.role}**")
                     except: pass
             
+            # 手動ループ (キャンセル待機)
             while True:
                 await asyncio.sleep(2)
                 if room.phase == "CANCELLED":
-                    await self.cleanup_venue(room)
-                    if channel.id in self.rooms: del self.rooms[channel_id]
+                    # cleanupはfinallyで行われる
                     return
             return
 
@@ -564,6 +600,7 @@ class WerewolfSystem(commands.Cog):
                 ts.append(self.bot.get_user(p.id).send("投票してください", view=VoteView(room, p, self)))
             await asyncio.gather(*ts)
             
+            # 最大3分待機
             elapsed=0
             start_alive = len(room.get_alive())
             while elapsed < 180:
@@ -577,10 +614,9 @@ class WerewolfSystem(commands.Cog):
 
             if room.check_winner(): await self.end_game(room, room.check_winner()); break
             day+=1
-
-        await self.cleanup_venue(room)
-        if channel.id in self.rooms:
-            del self.rooms[channel.id]
+        
+        # 正常終了時もfinallyが呼ばれるのでここでdelしなくてもよいが
+        # メッセージ等出すならここ
 
     async def end_game(self, room, winner):
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
@@ -592,23 +628,6 @@ class WerewolfSystem(commands.Cog):
         
         await target_ch.send("会場は60秒後に閉鎖されます...")
         await asyncio.sleep(60)
-
-    # --- Listener ---
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot: return
-        if self.bot.user in message.mentions:
-            if message.channel.id in self.rooms:
-                room = self.rooms[message.channel.id]
-                alive_list = [p.name for p in room.players.values() if p.is_alive]
-                dead_list = [p.name for p in room.players.values() if not p.is_alive]
-                embed = discord.Embed(title="📊 現在の戦況", color=0x2ecc71)
-                embed.add_field(name=f"🟢 生存 ({len(alive_list)})", value="\n".join(alive_list) or "なし", inline=True)
-                embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
-                await message.channel.send(embed=embed)
-            else:
-                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.2", color=0x9b59b6)
-                await message.channel.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(WerewolfSystem(bot))
