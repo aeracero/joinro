@@ -27,11 +27,11 @@ ROLE_DATA = {
     ROLE_PHAINON: {"desc": "暗殺者。敵を殺せるが味方だと自爆。", "has_ability": True},
     ROLE_SWORDMASTER: {"desc": "辻斬り(第3陣営)。生存勝利。", "has_ability": True},
     ROLE_MORDIS: {"desc": "1回襲撃を耐える。", "has_ability": False},
-    ROLE_CYRENE: {"desc": "死ぬと村全滅。自衛/バフが可能。", "has_ability": True},
+    ROLE_CYRENE: {"desc": "死ぬと村全滅。自衛1回/バフ1回。", "has_ability": True}, # ★変更
     ROLE_CERYDRA: {"desc": "権力者。投票が2票分になる。", "has_ability": False},
     ROLE_AGLAEA: {"desc": "調査員。昨日の投票先を見れる。", "has_ability": True},
     ROLE_SAPHEL: {"desc": "模倣者。相手の能力を使う(狼は死)。", "has_ability": True},
-    ROLE_HYANCI: {"desc": "コウモリ(第3陣営)。イカルンを捧げて50%生存。", "has_ability": True} # ★変更
+    ROLE_HYANCI: {"desc": "コウモリ(第3陣営)。イカルンを捧げて50%生存。", "has_ability": True}
 }
 
 TEAM_AMPHOREUS = "オンパロス陣営"
@@ -50,12 +50,11 @@ class Player:
         
         # キュレネ用
         self.cyrene_guard_count = 1
-        self.cyrene_buff_count = 2
-        self.cyrene_guard_available = True # (旧互換用、countで管理推奨)
+        self.cyrene_buff_count = 1  # ★変更: 2 -> 1
         
-        # ヒアンシー用 ★追加
+        # ヒアンシー用
         self.hyanci_ikarun_count = 2
-        self.hyanci_protection_active = False # イカルン使用中フラグ
+        self.hyanci_protection_active = False
         
         self.last_guarded_id = None
         self.vote_weight = 1
@@ -132,8 +131,8 @@ class GameRoom:
             p.is_alive = True
             p.mordis_revive_available = True
             p.cyrene_guard_count = 1
-            p.cyrene_buff_count = 2
-            p.hyanci_ikarun_count = 2 # ★リセット
+            p.cyrene_buff_count = 1 # ★変更
+            p.hyanci_ikarun_count = 2
             p.hyanci_protection_active = False
             p.last_guarded_id = None
             p.vote_weight = 1
@@ -190,7 +189,7 @@ class GameRoom:
             
             # 初期化
             p.cyrene_guard_count = 1
-            p.cyrene_buff_count = 2
+            p.cyrene_buff_count = 1 # ★変更
             p.hyanci_ikarun_count = 2
             p.hyanci_protection_active = False
 
