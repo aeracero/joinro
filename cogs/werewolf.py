@@ -1,4 +1,3 @@
-# cogs/werewolf.py
 import discord
 from discord.ext import commands
 from discord import ui
@@ -8,20 +7,15 @@ from objects import *
 # --- 常設用の起動ボタン ---
 class Launcher(ui.View):
     def __init__(self, bot_system):
-        # custom_idを設定することで、Bot再起動後もボタンが反応するようになります
         super().__init__(timeout=None)
-        self.bot_system = bot_system # 連携用
+        self.bot_system = bot_system # Cog本体と連携
 
     @ui.button(label="🐺 人狼ゲームの部屋を作成", style=discord.ButtonStyle.primary, custom_id="ww_create_room")
     async def create_room(self, interaction: discord.Interaction, button: ui.Button):
-        # BotSystemのインスタンスを取得してcreateを実行
-        # 注意: Viewの中からCogのメソッドを呼ぶための繋ぎ込みが必要
-        # 簡易実装として、Cog側で処理をフックします
-        await interaction.response.send_message("部屋を作成します...", ephemeral=True)
-        # 実際の処理はCogのリスナーまたはここで行いますが、今回は簡易的に
-        # システム経由で呼び出す形にします（後述のCog内でハンドリング）
+        # ここで直接 create_room_logic を呼び出します（on_interactionは使いません）
+        await self.bot_system.create_room_logic(interaction)
 
-# --- 設定モーダル（項目増量） ---
+# --- 設定モーダル ---
 class SettingsModal(ui.Modal, title="ゲーム設定"):
     def __init__(self, room, callback):
         super().__init__()
@@ -52,7 +46,7 @@ class SettingsModal(ui.Modal, title="ゲーム設定"):
         except:
             await interaction.response.send_message("数字を入力してください", ephemeral=True)
 
-# --- ゲーム内アクションView (前回と同様) ---
+# --- ゲーム内アクションView ---
 class NightActionView(ui.View):
     def __init__(self, room, player, action_type, callback):
         super().__init__(timeout=120)
@@ -94,44 +88,42 @@ class WerewolfSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.rooms = {} 
-
-    # ★ここがポイント: ボタンが押されたときのイベントをリッスン
-    @commands.Cog.listener()
-    async def on_interaction(self, interaction: discord.Interaction):
-        # custom_id が "ww_create_room" のボタンが押されたら発火
-        if interaction.type == discord.InteractionType.component:
-            if interaction.data.get("custom_id") == "ww_create_room":
-                await self.create_room_logic(interaction)
+        # on_interaction は削除しました（二重反応防止のため）
 
     @commands.command()
     async def panel(self, ctx):
-        """このチャンネルに常設の「部屋作成ボタン」を設置する"""
+        """常設ボタン設置"""
         embed = discord.Embed(
             title="🐺 人狼ゲーム", 
             description="下のボタンを押すと、このチャンネルで参加募集を開始します。",
             color=0x2c2c2c
         )
         await ctx.send(embed=embed, view=Launcher(self))
-        # 元のコマンドメッセージを消すと綺麗です
         try: await ctx.message.delete()
         except: pass
 
-    # ボタンからもコマンドからも呼ばれる部屋作成ロジック
+    # ボタンからもコマンドからも呼ばれる処理
     async def create_room_logic(self, interaction_or_ctx):
-        # interactionの場合とContextの場合で分岐
+        # 呼び出し元が Interaction(ボタン) か Context(コマンド) かで分岐
         if isinstance(interaction_or_ctx, discord.Interaction):
             channel = interaction_or_ctx.channel
-            respond = interaction_or_ctx.followup.send # ephemeral対応のためfollowup推奨
+            # まだ応答していない場合のみ send_message する
+            if not interaction_or_ctx.response.is_done():
+                await interaction_or_ctx.response.send_message("募集を開始しました", ephemeral=True)
+            else:
+                # 万が一応答済みの場合は followup を使う
+                await interaction_or_ctx.followup.send("募集を開始しました", ephemeral=True)
         else:
             channel = interaction_or_ctx.channel
-            respond = channel.send
+            await channel.send("募集を開始しました")
 
         if channel.id in self.rooms:
-            # 既に部屋がある場合はメッセージだけ返す
+            # 既に部屋がある場合
+            msg = "既に募集中かゲーム中です"
             if isinstance(interaction_or_ctx, discord.Interaction):
-                await interaction_or_ctx.response.send_message("既に募集中かゲーム中です", ephemeral=True)
+                await interaction_or_ctx.followup.send(msg, ephemeral=True)
             else:
-                await channel.send("既に募集中かゲーム中です")
+                await channel.send(msg)
             return
 
         # 部屋作成
@@ -162,25 +154,18 @@ class WerewolfSystem(commands.Cog):
                 await itx.response.send_modal(SettingsModal(room, update_panel))
             @ui.button(label="開始", style=discord.ButtonStyle.danger)
             async def start(self, itx, btn):
-                if len(room.players) < 2: # テスト用に2
-                    await itx.response.send_message("人数不足", ephemeral=True)
+                if len(room.players) < 2: 
+                    await itx.response.send_message("人数不足です（最低2人）", ephemeral=True)
                     return
                 await itx.response.send_message("ゲーム開始！")
                 self.stop()
                 room.phase = "STARTING"
 
         view = LobbyView()
-        # interaction経由の場合はレスポンス処理が違うため注意
-        if isinstance(interaction_or_ctx, discord.Interaction):
-             # ボタンを押した本人には見えないメッセージを返しつつ、チャンネルにパネルを出す
-             await interaction_or_ctx.response.send_message("募集を開始しました", ephemeral=True)
-             msg = await channel.send(embed=discord.Embed(title="準備中..."), view=view)
-        else:
-             msg = await channel.send(embed=discord.Embed(title="準備中..."), view=view)
-        
+        msg = await channel.send(embed=discord.Embed(title="準備中..."), view=view)
         await update_panel()
 
-        # 待機
+        # 待機ループ
         while room.phase == "WAITING":
             await asyncio.sleep(1)
             if room.phase == "STARTING": break
@@ -191,7 +176,7 @@ class WerewolfSystem(commands.Cog):
         room = self.rooms[channel_id]
         room.assign_roles()
         
-        # --- 役職通知 & 共有者確認 ---
+        # --- 役職通知 ---
         masons = [p for p in room.players.values() if p.role == ROLE_MASON]
         mason_names = ", ".join([p.name for p in masons])
 
@@ -218,15 +203,15 @@ class WerewolfSystem(commands.Cog):
             # === 夜 ===
             room.phase = "NIGHT"
             room.night_actions = {}
-            for p in room.players.values(): p.cursed_death = False # 呪殺フラグクリア
+            for p in room.players.values(): p.cursed_death = False
 
             async def night_cb(itx, player, act, tid):
                 target = room.players[tid] if tid else None
                 t_name = target.name if target else "なし"
                 
-                if act == "divine": # 占い
+                if act == "divine":
                     result = "人狼" if target.is_wolf_side else "人間"
-                    if target.role == ROLE_FOX: # ★妖狐なら呪殺フラグ
+                    if target.role == ROLE_FOX: # 呪殺
                         target.cursed_death = True
                     await itx.response.send_message(f"占い結果: {t_name} は **{result}** です。", ephemeral=True)
                 else:
@@ -253,20 +238,16 @@ class WerewolfSystem(commands.Cog):
             room.phase = "DAY"
             dead = []
             
-            # 襲撃処理
             bite_target = room.night_actions.get("bite")
             guard_target = room.night_actions.get("guard")
             if bite_target and bite_target != guard_target:
                 dead.append(room.players[bite_target])
             
-            # 呪殺処理 (妖狐)
             for p in room.players.values():
-                if p.cursed_death:
-                    dead.append(p)
+                if p.cursed_death: dead.append(p)
             
-            # 死者確定
             msg = f"🌞 **{day}日目の朝**\n"
-            dead = list(set(dead)) # 重複排除
+            dead = list(set(dead))
             if dead:
                 for d in dead: d.is_alive = False
                 msg += f"昨晩、**{', '.join([d.name for d in dead])}** が死亡しました。"
