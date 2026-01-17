@@ -1,7 +1,15 @@
 # config.py
+import os
+from dotenv import load_dotenv
 
-TOKEN = 'ca6fd48f147164fcce8b3af697d519505344733284d7a2581bbc369282051a22'  # ここにトークンを入れる
+# ローカルで .env ファイルがある場合は読み込む（Railway上では無視されます）
+load_dotenv()
+
+# Railwayの環境変数 'DISCORD_TOKEN' を読み込む
+TOKEN = os.getenv('DISCORD_TOKEN')
+
+# トークンが設定されていない場合のエラーハンドリング
+if TOKEN is None:
+    raise ValueError("トークンが見つかりません。RailwayのVariables設定を確認してください。")
+
 PREFIX = '!'
-
-# ゲーム設定のデフォルト値など
-WEREWOLF_COUNT = 1 # 人狼の数
