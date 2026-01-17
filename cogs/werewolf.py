@@ -824,6 +824,11 @@ class WerewolfSystem(commands.Cog):
         if room.check_winner():
             await self.end_game(room, room.check_winner())
 
+    # ★修正: !create コマンドを追加
+    @commands.command()
+    async def create(self, ctx):
+        await self.create_room_logic(ctx)
+
     @commands.command()
     async def wroles(self, ctx):
         embed = discord.Embed(title="📜 オンパロス戦線 役職一覧", color=0x3498db)
@@ -1080,16 +1085,19 @@ class WerewolfSystem(commands.Cog):
         while True:
             if room.phase == "CANCELLED": break
             
-            await self.start_night_logic(room)
+            # ★修正: 朝（議論）から開始
+            await target_ch.send(f"議論 {room.settings['discussion_time']}秒")
+            await asyncio.sleep(room.settings['discussion_time'])
+
+            # 投票
+            await self.start_vote_logic(room)
             if room.phase == "FINISHED": break
             if room.check_winner(): 
                 await self.end_game(room, room.check_winner())
                 break
             
-            await target_ch.send(f"議論 {room.settings['discussion_time']}秒")
-            await asyncio.sleep(room.settings['discussion_time'])
-
-            await self.start_vote_logic(room)
+            # 夜アクション
+            await self.start_night_logic(room)
             if room.phase == "FINISHED": break
             if room.check_winner(): 
                 await self.end_game(room, room.check_winner())
