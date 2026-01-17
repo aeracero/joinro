@@ -1,10 +1,11 @@
+# cogs/werewolf.py
 import discord
 from discord.ext import commands
 from discord import ui
 import asyncio
 from objects import *
 
-# --- Launcher (常設ボタン) [★修正ポイント] ---
+# --- Launcher (常設ボタン) ---
 class Launcher(ui.View):
     def __init__(self, bot_system=None):
         super().__init__(timeout=None)
@@ -12,16 +13,15 @@ class Launcher(ui.View):
     
     @ui.button(label="⚔️ オンパロス戦線を作成", style=discord.ButtonStyle.primary, custom_id="ww_create_room")
     async def create_room(self, interaction: discord.Interaction, button: ui.Button):
-        # ★ここが修正点: self.bot_system が None の場合、Bot本体から Cog を取得しにいく
+        # Bot本体からCogを探しに行く（再起動対策）
         system = self.bot_system
         if system is None:
-            # "WerewolfSystem" という名前のCogを探す
             system = interaction.client.get_cog("WerewolfSystem")
         
         if system:
             await system.create_room_logic(interaction)
         else:
-            await interaction.response.send_message("エラー: システムが見つかりません。", ephemeral=True)
+            await interaction.response.send_message("エラー: システムが起動していません。", ephemeral=True)
 
 # --- GM用: プレイヤー操作View ---
 class GMPlayerActionView(ui.View):
@@ -44,7 +44,9 @@ class GMPlayerActionView(ui.View):
     async def check_role(self, interaction: discord.Interaction, button: ui.Button):
         status = []
         if self.target.role == ROLE_MORDIS: status.append(f"復活権:{'有' if self.target.mordis_revive_available else '無'}")
+        if self.target.role == ROLE_PHAINON: status.append("x2票")
         status_str = f" ({', '.join(status)})" if status else ""
+        
         msg = f"👤 **{self.target.name}**\n役職: **{self.target.role}**\n状態: {'🟢生存' if self.target.is_alive else '💀死亡'}{status_str}"
         await interaction.response.send_message(msg, ephemeral=True)
 
@@ -59,7 +61,7 @@ class GMDMModal(ui.Modal, title="GMメッセージ送信"):
             embed = discord.Embed(title="📩 GMからのメッセージ", description=self.msg.value, color=0xff00ff)
             await self.target.member.send(embed=embed)
             await interaction.response.send_message(f"{self.target.name} に送信しました。", ephemeral=True)
-        except: await interaction.response.send_message("送信失敗", ephemeral=True)
+        except: await interaction.response.send_message("送信失敗（DM拒否設定など）", ephemeral=True)
 
 # --- GM用: プレイヤー選択 ---
 class GMPlayerSelectView(ui.View):
@@ -109,7 +111,7 @@ class GMControlView(ui.View):
     @ui.button(label="💥 強制終了", style=discord.ButtonStyle.danger, row=2)
     async def close_room(self, interaction: discord.Interaction, button: ui.Button):
         if not self.check_perm(interaction): return
-        self.room.phase = "CANCELLED" # 強制終了フラグ
+        self.room.phase = "CANCELLED"
         await interaction.response.send_message("部屋を解散しました。", ephemeral=True)
         await self.room.channel.send("🛑 GMによりゲームが強制終了されました。")
 
@@ -133,6 +135,7 @@ class SettingsModal(ui.Modal, title="設定"):
         self.add_item(self.lykos)
         self.add_item(self.tribbie)
         self.add_item(self.specials)
+
     async def on_submit(self, itx):
         try:
             self.room.settings["mode"] = "MANUAL" if self.mode_input.value == "1" else "AUTO"
@@ -148,7 +151,7 @@ class SettingsModal(ui.Modal, title="設定"):
             await self.callback()
         except: await itx.response.send_message("エラー", ephemeral=True)
 
-# --- Action Views ---
+# --- Action Views (Auto/Manual共用) ---
 class NightActionView(ui.View):
     def __init__(self, room, player, action_type, callback):
         super().__init__(timeout=120)
@@ -196,35 +199,53 @@ class WerewolfSystem(commands.Cog):
             for ch_id, room in self.rooms.items():
                 ch = self.bot.get_channel(ch_id)
                 ch_name = ch.name if ch else "不明"
-                room_list += f"• {ch_name}: {len(room.players)}人\n"
-        else: room_list = "なし"
-        embed = discord.Embed(title="⚔️ オンパロス戦線", description=f"現在のルーム:\n{room_list}", color=0x8e44ad)
+                mode = "手動" if room.settings["mode"] == "MANUAL" else "自動"
+                room_list += f"• **{ch_name}**: {len(room.players)}人 ({mode})\n"
+        else: room_list = "現在進行中のルームはありません。"
+        
+        embed = discord.Embed(title="⚔️ オンパロス戦線 ロビー", color=0x8e44ad)
+        embed.add_field(name="ルーム一覧", value=room_list, inline=False)
+        embed.add_field(name="新規作成", value="下のボタンから作成できます。", inline=False)
+        
         await ctx.send(embed=embed, view=Launcher(self))
         try: await ctx.message.delete()
         except: pass
 
     @commands.command()
     async def wclose(self, ctx):
+        """現在のチャンネルのルームを削除する"""
         if ctx.channel.id in self.rooms:
-            # 部屋のステータスをキャンセルにしてループを抜ける
             self.rooms[ctx.channel.id].phase = "CANCELLED"
-            await ctx.send("💥 ルームを解散・削除します...")
-            # 念のため辞書からも消す(ループ側のタイミングと被る可能性があるが安全策)
-            # ただしループが走っている場合はループ内で消させるのが安全なので、
-            # ここではフラグを立てるに留めるのがベストプラクティスだが、
-            # 強制削除として消してしまう
+            await ctx.send("💥 ルームを解散・削除しました。")
+            # 念のための削除
             if ctx.channel.id in self.rooms:
                 del self.rooms[ctx.channel.id]
         else:
             await ctx.send("ここにはルームがありません。")
 
-    # 手動用コマンド
+    # 手動用コマンドヘルパー
     async def check_gm(self, ctx):
         if ctx.channel.id not in self.rooms: return None
         room = self.rooms[ctx.channel.id]
         if room.settings["mode"] != "MANUAL": return None
         if room.gm_user and ctx.author.id != room.gm_user.id: return None
         return room
+
+    @commands.command()
+    async def wstatus(self, ctx):
+        """[GM] ステータスをDMで受信"""
+        room = await self.check_gm(ctx)
+        if not room: return
+        await ctx.message.delete()
+        embed = discord.Embed(title="🕵️ GMステータス", color=0x2b2d31)
+        alive_txt, dead_txt = "", ""
+        for p in room.players.values():
+            line = f"{'🟢' if p.is_alive else '💀'} **{p.name}** : `{p.role}`\n"
+            if p.is_alive: alive_txt += line
+            else: dead_txt += line
+        embed.add_field(name="生存", value=alive_txt or "なし")
+        if dead_txt: embed.add_field(name="死亡", value=dead_txt)
+        await ctx.author.send(embed=embed)
 
     @commands.command()
     async def wvote(self, ctx):
@@ -273,32 +294,23 @@ class WerewolfSystem(commands.Cog):
         await asyncio.gather(*tasks)
 
     # --- Logic ---
-# --- Logic ---
     async def create_room_logic(self, itx_or_ctx):
-        # ★変数を初期化（これで黄色い警告が消えます）
+        # 安全に変数を初期化
         channel = None
         user = None
 
-        # 呼び出し元が「ボタン(Interaction)」か「コマンド(Context)」かで分岐
         if isinstance(itx_or_ctx, discord.Interaction):
             channel = itx_or_ctx.channel
             user = itx_or_ctx.user
-            # ボタンを押した時の「考え中...」などを解消する
             if not itx_or_ctx.response.is_done(): 
-                await itx_or_ctx.response.send_message("ロビーを作成します...", ephemeral=True)
+                await itx_or_ctx.response.send_message("ロビー作成", ephemeral=True)
         else:
-            # コマンドの場合
             channel = itx_or_ctx.channel
             user = itx_or_ctx.author
 
-        # 安全装置: 万が一チャンネルが取得できていなければ中断
-        if channel is None:
-            return
-
-        # --- 以下、部屋作成ロジック ---
+        if channel is None: return
 
         if channel.id in self.rooms:
-            # 既存ルームがある場合
             if not isinstance(itx_or_ctx, discord.Interaction):
                 await channel.send("既に部屋があります。解散するには `!wclose` してください。")
             return
@@ -317,22 +329,18 @@ class WerewolfSystem(commands.Cog):
             try: await msg.edit(embed=embed, view=view)
             except: pass
 
-        # ロビー用のボタン定義
         class LobbyView(ui.View):
             def __init__(self): super().__init__(timeout=None)
-            
             @ui.button(label="参戦/離脱", style=discord.ButtonStyle.success)
             async def join(self, itx, btn):
                 if itx.user.id not in room.players: room.join(itx.user)
                 else: room.leave(itx.user)
                 await itx.response.send_message("更新", ephemeral=True)
                 await update_panel()
-            
             @ui.button(label="設定", style=discord.ButtonStyle.secondary)
             async def setting(self, itx, btn):
                 room.gm_user = itx.user
                 await itx.response.send_modal(SettingsModal(room, update_panel))
-            
             @ui.button(label="💥 解散", style=discord.ButtonStyle.secondary)
             async def cancel(self, itx, btn):
                 if itx.user.id != room.gm_user.id:
@@ -341,7 +349,6 @@ class WerewolfSystem(commands.Cog):
                 room.phase = "CANCELLED"
                 await msg.edit(content="💥 解散されました。", embed=None, view=None)
                 self.stop()
-            
             @ui.button(label="開戦", style=discord.ButtonStyle.danger)
             async def start(self, itx, btn):
                 if room.settings["mode"]=="MANUAL": room.gm_user = itx.user
@@ -359,17 +366,44 @@ class WerewolfSystem(commands.Cog):
         # ルーム待機ループ
         while room.phase == "WAITING":
             await asyncio.sleep(1)
-            # キャンセル（解散）チェック
             if room.phase == "CANCELLED":
-                if channel.id in self.rooms:
-                    del self.rooms[channel.id]
+                if channel.id in self.rooms: del self.rooms[channel.id]
                 return
             if room.phase == "STARTING": break
         
         await self.run_game(channel.id)
 
+    async def run_game(self, channel_id):
+        room = self.rooms[channel_id]
+        room.assign_roles()
+
+        if room.settings["mode"] == "MANUAL":
+            await room.channel.send(
+                f"👤 **手動GMモード**\nGM: {room.gm_user.mention}\nGMパネルで操作してください。",
+                view=GMControlView(room)
+            )
+            # GM役職表
+            spoiler = "【役職表】\n"
+            for p in room.players.values(): spoiler += f"{p.name}: {p.role}\n"
+            try: await room.gm_user.send(spoiler)
+            except: pass
+            
+            # プレイヤー通知
+            for p in room.players.values():
+                u = self.bot.get_user(p.id)
+                if u: 
+                    try: await u.send(f"役職: **{p.role}**")
+                    except: pass
+            
+            # 手動モード中は無限ループで待機し、強制終了フラグを監視する
+            while True:
+                await asyncio.sleep(2)
+                if room.phase == "CANCELLED":
+                    if channel.id in self.rooms: del self.rooms[channel_id]
+                    return
+            return
+
         # === 全自動モード ===
-        # キャンセル監視を入れつつ進行
         await room.channel.send("全自動モード開始。")
         for p in room.players.values():
             u = self.bot.get_user(p.id)
@@ -378,7 +412,6 @@ class WerewolfSystem(commands.Cog):
 
         day = 1
         while True:
-            # ゲーム中も強制終了チェック
             if room.phase == "CANCELLED": break
 
             room.phase="NIGHT"; room.night_actions={}
