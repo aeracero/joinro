@@ -2,35 +2,45 @@
 import discord
 import random
 
-# --- 役職定数 ---
-ROLE_VILLAGER = "村人"
-ROLE_WEREWOLF = "人狼"
-ROLE_SEER = "占い師"
-ROLE_MEDIUM = "霊媒師"
-ROLE_BODYGUARD = "狩人"
-ROLE_MADMAN = "狂人"
-ROLE_FOX = "妖狐"     # ★追加: 占われると死ぬ。最後まで生き残れば単独勝利
-ROLE_MASON = "共有者" # ★追加: 相方が誰かわかる
+# --- 役職定義 (オンパロス) ---
+ROLE_CITIZEN = "タイタンの末裔" # 市民
+ROLE_LYKOS = "ライコス"       # 人狼
+ROLE_CAENEUS = "カイニス"     # 狂人
+ROLE_TRIBBIE = "トリビー"     # 占い
+ROLE_CASTORICE = "キャストリス" # 霊媒
+ROLE_SIRENS = "セイレンス"    # 騎士
+ROLE_PHAINON = "ファイノン"   # シェリフ
+ROLE_SWORDMASTER = "黒衣の剣士" # 第三陣営殺人鬼
+ROLE_MORDIS = "モーディス"    # 1回蘇生
+ROLE_CYRENE = "キュレネ"      # 吊られたら村敗北
 
-# --- 陣営定数 ---
-TEAM_VILLAGER = "村人陣営"
-TEAM_WEREWOLF = "人狼陣営"
-TEAM_FOX = "妖狐陣営" # ★追加
+# --- 陣営 ---
+TEAM_AMPHOREUS = "オンパロス陣営"
+TEAM_LYKOS = "ライコス陣営"
+TEAM_SWORDMASTER = "黒衣の剣士"
 
 class Player:
     def __init__(self, member: discord.Member):
         self.member = member
         self.id = member.id
         self.name = member.display_name
-        self.role = ROLE_VILLAGER
+        self.role = ROLE_CITIZEN
         self.is_alive = True
-        self.cursed_death = False # 占いによる呪殺フラグ
+        
+        # 特殊能力フラグ
+        self.mordis_revive_available = True
+        self.vote_weight = 1
+
+    @property
+    def team(self):
+        if self.role in [ROLE_LYKOS, ROLE_CAENEUS]: return TEAM_LYKOS
+        if self.role == ROLE_SWORDMASTER: return TEAM_SWORDMASTER
+        return TEAM_AMPHOREUS
 
     @property
     def is_wolf_side(self):
-        """占い・霊媒結果での判定（黒か白か）"""
-        # 妖狐は「白（人間）」判定が出るが、占われると死ぬ
-        return self.role == ROLE_WEREWOLF
+        # 剣士は占い結果「人間(白)」と出るのが一般的
+        return self.role == ROLE_LYKOS
 
 class GameRoom:
     def __init__(self, channel: discord.TextChannel):
@@ -38,33 +48,28 @@ class GameRoom:
         self.players = {} 
         self.phase = "WAITING"
         
-        # 設定（デフォルト値）
         self.settings = {
-            "werewolf": 1,
-            "seer": 1,
-            "medium": 1,
-            "bodyguard": 1,
-            "madman": 0,
-            "fox": 0,   # ★追加
-            "mason": 0, # ★追加
+            "lykos": 1, "caeneus": 0,
+            "tribbie": 1, "castorice": 1, "sirens": 1,
+            "swordmaster": 0, "phainon": 0,
+            "mordis": 0, "cyrene": 0,
             "discussion_time": 60
         }
         
         self.night_actions = {}
         self.votes = {}
         self.last_executed = None
+        self.cyrene_executed = False
 
-    def join(self, member: discord.Member):
+    def join(self, member):
         if member.id not in self.players:
             self.players[member.id] = Player(member)
             return True
-        return False
 
-    def leave(self, member: discord.Member):
+    def leave(self, member):
         if member.id in self.players:
             del self.players[member.id]
             return True
-        return False
 
     def get_alive(self):
         return [p for p in self.players.values() if p.is_alive]
@@ -74,48 +79,51 @@ class GameRoom:
         random.shuffle(all_players)
         
         roles = []
-        roles.extend([ROLE_WEREWOLF] * self.settings["werewolf"])
-        roles.extend([ROLE_SEER] * self.settings["seer"])
-        roles.extend([ROLE_MEDIUM] * self.settings["medium"])
-        roles.extend([ROLE_BODYGUARD] * self.settings["bodyguard"])
-        roles.extend([ROLE_MADMAN] * self.settings["madman"])
-        roles.extend([ROLE_FOX] * self.settings["fox"])
+        s = self.settings
+        roles.extend([ROLE_LYKOS]*s["lykos"])
+        roles.extend([ROLE_CAENEUS]*s["caeneus"])
+        roles.extend([ROLE_TRIBBIE]*s["tribbie"])
+        roles.extend([ROLE_CASTORICE]*s["castorice"])
+        roles.extend([ROLE_SIRENS]*s["sirens"])
+        roles.extend([ROLE_SWORDMASTER]*s["swordmaster"])
+        roles.extend([ROLE_PHAINON]*s["phainon"])
+        roles.extend([ROLE_MORDIS]*s["mordis"])
+        roles.extend([ROLE_CYRENE]*s["cyrene"])
         
-        # 共有者は必ず2人ペア（または0人）にするのが一般的だが、設定数分入れる
-        roles.extend([ROLE_MASON] * self.settings["mason"])
-
-        # 人数調整
-        if len(roles) > len(all_players):
-            roles = roles[:len(all_players)]
-        else:
-            roles.extend([ROLE_VILLAGER] * (len(all_players) - len(roles)))
+        if len(roles) > len(all_players): roles = roles[:len(all_players)]
+        else: roles.extend([ROLE_CITIZEN] * (len(all_players) - len(roles)))
         
         random.shuffle(roles)
         for p, r in zip(all_players, roles):
             p.role = r
+            if r == ROLE_PHAINON: p.vote_weight = 2
+            if r == ROLE_MORDIS: p.mordis_revive_available = True
 
     def check_winner(self):
-        """勝利判定ロジック（妖狐優先）"""
         alive = self.get_alive()
-        wolves = len([p for p in alive if p.role == ROLE_WEREWOLF])
-        foxes = len([p for p in alive if p.role == ROLE_FOX])
-        humans = len(alive) - wolves - foxes # 妖狐はカウントから除外
+        wolves = len([p for p in alive if p.role == ROLE_LYKOS])
+        sm_alive = len([p for p in alive if p.role == ROLE_SWORDMASTER]) > 0
+        humans = len(alive) - wolves
 
-        # 1. 村人 vs 人狼 の決着がついたか？
+        # 1. キュレネ処刑 -> 強制敗北
+        if self.cyrene_executed: return TEAM_LYKOS
+
         game_over = False
-        winner_team = None
+        winner = None
 
+        # 2. 殲滅勝利 (オンパロス)
         if wolves == 0:
             game_over = True
-            winner_team = TEAM_VILLAGER
-        elif wolves >= (humans + foxes): # 妖狐も頭数には入る
-            game_over = True
-            winner_team = TEAM_WEREWOLF
-
-        # 2. 決着がついた時、妖狐が生きていれば妖狐の勝ち
-        if game_over:
-            if foxes > 0:
-                return TEAM_FOX
-            return winner_team
+            winner = TEAM_AMPHOREUS
         
+        # 3. 襲撃勝利 (ライコス)
+        elif wolves >= humans:
+            game_over = True
+            winner = TEAM_LYKOS
+        
+        if game_over:
+            # 4. 漁夫の利 (黒衣の剣士)
+            if sm_alive: return TEAM_SWORDMASTER
+            return winner
+            
         return None
