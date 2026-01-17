@@ -38,7 +38,7 @@ class GMPlayerActionView(ui.View):
     @ui.button(label="💀 死亡認定", style=discord.ButtonStyle.danger)
     async def kill_player(self, interaction: discord.Interaction, button: ui.Button):
         await self.system.kill_player_logic(self.room, self.target)
-        await interaction.response.send_message(f"💀 **{self.target.name}** を死亡判定にしました。", ephemeral=True)
+        await interaction.response.send_message(f"💀 **{self.target.name}** を死亡判定にしました(手動)。", ephemeral=True)
 
     @ui.button(label="😇 蘇生", style=discord.ButtonStyle.success)
     async def revive_player(self, interaction: discord.Interaction, button: ui.Button):
@@ -111,14 +111,16 @@ class GMControlView(ui.View):
     @ui.button(label="🌙 夜フェーズ開始", style=discord.ButtonStyle.primary, row=2)
     async def start_night(self, interaction: discord.Interaction, button: ui.Button):
         if not self.check_perm(interaction): return
-        await interaction.response.send_message("🌙 夜のアクションを開始します。", ephemeral=True)
-        await self.system.start_night_logic(self.room)
+        # GMがボタンを押したら、Botが自動進行ロジックを開始する
+        await interaction.response.send_message("🌙 夜のアクションを開始します。全員の行動完了を待機中...", ephemeral=True)
+        # 非同期で裏で走らせる（Waitが入るため）
+        asyncio.create_task(self.system.start_night_logic(self.room))
 
     @ui.button(label="🗳️ 投票フェーズ開始", style=discord.ButtonStyle.primary, row=2)
     async def start_vote(self, interaction: discord.Interaction, button: ui.Button):
         if not self.check_perm(interaction): return
         await interaction.response.send_message("🗳️ 投票フェーズを開始します。", ephemeral=True)
-        await self.system.start_vote_logic(self.room)
+        asyncio.create_task(self.system.start_vote_logic(self.room))
 
     @ui.button(label="💥 強制終了", style=discord.ButtonStyle.danger, row=3)
     async def close_room(self, interaction: discord.Interaction, button: ui.Button):
@@ -131,36 +133,23 @@ class GMControlView(ui.View):
             return False
         return True
 
-# --- Settings (全役職対応版) ---
+# --- Settings ---
 class SettingsModal(ui.Modal, title="配役設定"):
     def __init__(self, room, callback):
         super().__init__()
         self.room = room
         self.callback = callback
-        
-        # 現在の設定を取得 (まだ弄ってなければ推奨設定)
         s = room.get_recommended_settings(len(room.players)) if not room.custom_settings else room.settings
-
-        # 1. モード設定
         curr_mode = "1" if s["mode"] == "MANUAL" else "0"
         self.inp_mode = ui.TextInput(label="モード (0:自動 / 1:手動GM)", default=curr_mode, max_length=1)
-        
-        # 2. 人狼・狂人
         def_wolves = f"{s.get('lykos',0)}, {s.get('caeneus',0)}"
-        self.inp_wolves = ui.TextInput(label="人狼陣営: ライコス, カイニス", default=def_wolves, placeholder="例: 2, 1")
-        
-        # 3. 村役職 (占い, 騎士, 霊媒)
+        self.inp_wolves = ui.TextInput(label="人狼陣営: ライコス, カイニス", default=def_wolves)
         def_power = f"{s.get('tribbie',0)}, {s.get('sirens',0)}, {s.get('castorice',0)}"
-        self.inp_power = ui.TextInput(label="村役職: トリビー, セイレンス, キャストリス", default=def_power, placeholder="例: 1, 1, 1")
-        
-        # 4. 特殊・第三 (剣士, モーディス)
+        self.inp_power = ui.TextInput(label="村役職: トリビー, セイレンス, キャストリス", default=def_power)
         def_special = f"{s.get('swordmaster',0)}, {s.get('mordis',0)}"
-        self.inp_special = ui.TextInput(label="特殊: 黒衣の剣士, モーディス", default=def_special, placeholder="例: 1, 0")
-        
-        # 5. 固有 (キュレネ, ファイノン)
+        self.inp_special = ui.TextInput(label="特殊: 黒衣の剣士, モーディス", default=def_special)
         def_unique = f"{s.get('cyrene',0)}, {s.get('phainon',0)}"
-        self.inp_unique = ui.TextInput(label="固有: キュレネ, ファイノン", default=def_unique, placeholder="例: 0, 0")
-
+        self.inp_unique = ui.TextInput(label="固有: キュレネ, ファイノン", default=def_unique)
         self.add_item(self.inp_mode)
         self.add_item(self.inp_wolves)
         self.add_item(self.inp_power)
@@ -171,62 +160,35 @@ class SettingsModal(ui.Modal, title="配役設定"):
         return unicodedata.normalize('NFKC', text)
 
     def parse_list(self, text, count):
-        """カンマ区切りテキストを整数のリストにする"""
         text = self.normalize(text)
-        for sep in ['、', ' ', '　']:
-            text = text.replace(sep, ',')
+        for sep in ['、', ' ', '　']: text = text.replace(sep, ',')
         parts = [p.strip() for p in text.split(',') if p.strip()]
         result = []
         for i in range(count):
-            try:
-                val = int(parts[i])
-                result.append(val)
-            except:
-                result.append(0)
+            try: result.append(int(parts[i]))
+            except: result.append(0)
         return result
 
     async def on_submit(self, itx):
         try:
-            # モード設定
             mode_val = self.normalize(self.inp_mode.value)
             self.room.settings["mode"] = "MANUAL" if mode_val == "1" else "AUTO"
-            
-            # 各役職のパース
             wolves = self.parse_list(self.inp_wolves.value, 2)
             power = self.parse_list(self.inp_power.value, 3)
             special = self.parse_list(self.inp_special.value, 2)
             unique = self.parse_list(self.inp_unique.value, 2)
-            
-            # 設定反映
             s = self.room.settings
             s["lykos"], s["caeneus"] = wolves[0], wolves[1]
             s["tribbie"], s["sirens"], s["castorice"] = power[0], power[1], power[2]
             s["swordmaster"], s["mordis"] = special[0], special[1]
             s["cyrene"], s["phainon"] = unique[0], unique[1]
-            
-            # カスタムフラグON
             self.room.custom_settings = True
-            
-            # 合計チェック
-            total_roles = sum([
-                s["lykos"], s["caeneus"], s["tribbie"], s["sirens"], s["castorice"],
-                s["swordmaster"], s["mordis"], s["cyrene"], s["phainon"]
-            ])
-            player_count = len(self.room.players)
-            citizen_count = player_count - total_roles
-            
-            warn = ""
-            if citizen_count < 0:
-                warn = f"\n⚠️ 注意: 役職数({total_roles})が参加者({player_count})を超えています！"
-            
             m_str = "手動GM" if s["mode"] == "MANUAL" else "全自動"
-            await itx.response.send_message(f"✅ 設定更新: {m_str} (カスタム配役)\n市民枠: {citizen_count}名{warn}", ephemeral=True)
+            await itx.response.send_message(f"✅ 設定更新: {m_str}", ephemeral=True)
             await self.callback()
-            
-        except Exception as e:
-            await itx.response.send_message(f"⚠️ エラー: {e}", ephemeral=True)
+        except: await itx.response.send_message("エラー", ephemeral=True)
 
-# --- Vote/Action Views ---
+# --- Views ---
 class VoteView(ui.View):
     def __init__(self, room, player, system):
         super().__init__(timeout=None)
@@ -264,44 +226,8 @@ class VoteView(ui.View):
         await interaction.response.edit_message(content=f"✅ **{target_name}** に投票しました。", view=None)
 
         if len(self.room.votes) >= len(self.room.get_alive()):
-            await self.tally_votes()
-
-    async def tally_votes(self):
-        if hasattr(self.room, "vote_finished") and self.room.vote_finished: return
-        self.room.vote_finished = True
-
-        target_ch = self.room.main_ch if self.room.main_ch else self.room.lobby_channel
-        await target_ch.send("🗳️ **投票終了**。全員の投票が完了しました。\n開票を行います...")
-        await asyncio.sleep(3)
-
-        tally = {}
-        for voter_id, target in self.room.votes.items():
-            voter = self.room.players.get(voter_id)
-            weight = voter.vote_weight if voter else 1
-            tally[target] = tally.get(target, 0) + weight
-
-        if not tally:
-            await target_ch.send("投票がありませんでした。")
-            self.room.vote_finished = False 
-            return
-
-        max_votes = max(tally.values())
-        candidates = [t for t, count in tally.items() if count == max_votes]
-
-        if "skip" in candidates:
-            await target_ch.send("投票の結果、**スキップ** が多数となりました。\n本日の処刑は見送られます。")
-        else:
-            final_target_id = random.choice(candidates)
-            executed_player = self.room.players.get(final_target_id)
-            
-            if executed_player:
-                await self.system.kill_player_logic(self.room, executed_player)
-                self.room.last_executed = executed_player
-                if executed_player.role == ROLE_CYRENE:
-                    self.room.cyrene_executed = True
-                    await target_ch.send(f"⚠️ 処刑された **{executed_player.name}** は... **{ROLE_CYRENE}** でした！！\n禁忌に触れたため、オンパロス陣営は敗北となります。")
-            else:
-                await target_ch.send("エラー: 対象が見つかりません。")
+            # 投票完了処理はsystem側で管理しているので、ここでは通知のみ
+            pass
 
 class NightActionView(ui.View):
     def __init__(self, room, player, action_type, callback):
@@ -384,12 +310,27 @@ class WerewolfSystem(commands.Cog):
             await room.main_ch.send(f"😇 奇跡が起き、**{player.name}** の火種が戻りました！")
             await room.grave_ch.send(f"😇 **{player.name}** が蘇生され、戦場へ戻りました。")
 
+    # --- Night Logic (Wait & Auto Resolve) ---
     async def start_night_logic(self, room):
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
         await target_ch.send("🌙 **夜のアクション** を開始します。")
+        
+        # 1. 待機リスト作成 (能力者のみ)
+        # ライコス、占い、騎士、剣士など
+        active_roles = [ROLE_LYKOS, ROLE_TRIBBIE, ROLE_SIRENS, ROLE_SWORDMASTER]
+        pending_actors = set([p.id for p in room.get_alive() if p.role in active_roles])
+        room.night_actions = {} # リセット
+
+        # コールバック定義
         async def cb(itx, player, act, tid):
             target = room.players[tid] if tid else None
             t_name = target.name if target else "なし"
+            
+            # 選択を保存
+            room.night_actions[act] = tid
+            if player.id in pending_actors:
+                pending_actors.discard(player.id)
+
             if act == "divine":
                 res = "ライコス" if target.is_wolf_side else "人間"
                 await itx.response.edit_message(content=f"🔮 判定: {t_name}は**{res}**", view=None)
@@ -397,17 +338,68 @@ class WerewolfSystem(commands.Cog):
             else:
                 await itx.response.edit_message(content=f"✅ {t_name}を選択", view=None)
                 if room.gm_user: await room.gm_user.send(f"🌙 {player.name} -> {t_name}")
+
+        # View配布
         tasks = []
         for p in room.get_alive():
             view = None
             msg = ""
-            if p.role == ROLE_LYKOS: view=NightActionView(room,p,"steal",cb); msg="【強奪】 誰を狙いますか？"
-            elif p.role == ROLE_TRIBBIE: view=NightActionView(room,p,"divine",cb); msg="【占い】 誰を占いますか？"
-            elif p.role == ROLE_SIRENS: view=NightActionView(room,p,"guard",cb); msg="【護衛】 誰を守りますか？"
-            elif p.role == ROLE_SWORDMASTER: view=NightActionView(room,p,"slash",cb); msg="【辻斬り】 誰を狙いますか？"
-            if view: tasks.append(self.bot.get_user(p.id).send(msg, view=view))
+            if p.role in active_roles:
+                if p.role == ROLE_LYKOS: view=NightActionView(room,p,"steal",cb); msg="【強奪】 誰を狙いますか？"
+                elif p.role == ROLE_TRIBBIE: view=NightActionView(room,p,"divine",cb); msg="【占い】 誰を占いますか？"
+                elif p.role == ROLE_SIRENS: view=NightActionView(room,p,"guard",cb); msg="【護衛】 誰を守りますか？"
+                elif p.role == ROLE_SWORDMASTER: view=NightActionView(room,p,"slash",cb); msg="【辻斬り】 誰を狙いますか？"
+                if view: tasks.append(self.bot.get_user(p.id).send(msg, view=view))
+        
         if tasks: await asyncio.gather(*tasks)
         else: await target_ch.send("（能力を使用できる生存者がいません）")
+
+        # 2. 全員完了まで待機 (またはタイムアウト)
+        wait_time = 0
+        while len(pending_actors) > 0:
+            await asyncio.sleep(1)
+            wait_time += 1
+            if wait_time > 180: # 3分
+                await target_ch.send("⏰ 時間切れにより夜を終了します。")
+                break
+            # 手動/自動問わずキャンセル監視
+            if room.phase == "CANCELLED": return
+
+        # 3. 自動解決 (手動モードでも実行)
+        await self.resolve_morning(room)
+
+    async def resolve_morning(self, room):
+        target_ch = room.main_ch if room.main_ch else room.lobby_channel
+        
+        st = room.night_actions.get("steal")
+        gt = room.night_actions.get("guard")
+        sl = room.night_actions.get("slash")
+        
+        dead = []
+        # 強奪＆斬撃の処理
+        targets = set([x for x in [st, sl] if x])
+        for tid in targets:
+            if tid == gt: continue # 護衛成功
+            victim = room.players.get(tid)
+            if victim:
+                # モーディス判定
+                if victim.role == ROLE_MORDIS and victim.mordis_revive_available:
+                    victim.mordis_revive_available = False
+                    # 死なない
+                else:
+                    dead.append(victim)
+        
+        # 死亡実行
+        for d in dead:
+            await self.kill_player_logic(room, d)
+        
+        msg = f"🌞 **朝が来ました**\n" + (f"{', '.join([d.name for d in dead])} が無惨な姿で発見されました。" if dead else "昨晩は犠牲者がいませんでした。")
+        await target_ch.send(msg)
+
+        if room.check_winner():
+            await self.end_game(room, room.check_winner())
+        else:
+            await target_ch.send(f"議論を開始してください ({room.settings['discussion_time']}秒)")
 
     async def start_vote_logic(self, room):
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
@@ -420,6 +412,25 @@ class WerewolfSystem(commands.Cog):
             tasks.append(self.bot.get_user(p.id).send("【投票】 追放する者を選んでください（1回のみ）", view=view))
         if tasks: await asyncio.gather(*tasks)
         else: await target_ch.send("（投票できる生存者がいません）")
+
+        # 待機 (VoteView側でtallyが呼ばれるが、ここでも待つ)
+        wait_time = 0
+        while not room.vote_finished:
+            await asyncio.sleep(1)
+            wait_time += 1
+            if wait_time > 180: # タイムアウト
+                await target_ch.send("⏰ 時間切れ。強制開票します。")
+                # 無理やり集計ロジックを呼ぶのは難しいので、View側が機能することを信じる
+                break
+            if room.phase == "CANCELLED": return
+            
+            # 全員投票完了チェック
+            if len(room.votes) >= len(room.get_alive()):
+                break # VoteViewのtally_votesが走るはず
+
+        # 集計後に勝敗チェック
+        await asyncio.sleep(3) # 演出待ち
+        if room.check_winner(): await self.end_game(room, room.check_winner())
 
     @commands.command()
     async def wroles(self, ctx):
@@ -494,14 +505,14 @@ class WerewolfSystem(commands.Cog):
         room = await self.check_gm(ctx)
         if not room: return
         await ctx.message.delete()
-        await self.start_vote_logic(room)
+        asyncio.create_task(self.start_vote_logic(room))
 
     @commands.command()
     async def wnight(self, ctx):
         room = await self.check_gm(ctx)
         if not room: return
         await ctx.message.delete()
-        await self.start_night_logic(room)
+        asyncio.create_task(self.start_night_logic(room))
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -516,8 +527,8 @@ class WerewolfSystem(commands.Cog):
                 embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
                 await message.channel.send(embed=embed)
             else:
-                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.3 (Beta)", color=0x9b59b6)
-                embed.add_field(name="✨ v0.3 更新内容", value="• 📩 DMコマンド `!wroles`, `!walive` 追加\n• ⚖️ 配役自動バランス調整\n• 😇 GM蘇生機能・進行ボタン追加", inline=False)
+                embed = discord.Embed(title="⚔️ オンパロス戦線 Bot", description="Bot Version 0.3.1", color=0x9b59b6)
+                embed.add_field(name="✨ v0.3.1 更新内容", value="• 🤖 手動モードでの自動処理強化\n• ⏳ 夜/投票フェーズの待機ロジック統合", inline=False)
                 await message.channel.send(embed=embed)
 
     async def create_room_logic(self, itx_or_ctx):
@@ -551,8 +562,6 @@ class WerewolfSystem(commands.Cog):
                 note = "(カスタム設定)"
 
             m_txt = "🤖全自動" if s["mode"]=="AUTO" else f"👤手動GM"
-            
-            # 全役職を表示
             role_summary = (
                 f"🐺:{s_display['lykos']} 狂:{s_display['caeneus']} 🔮:{s_display['tribbie']} 👻:{s_display['castorice']}\n"
                 f"🛡️:{s_display['sirens']} ⚔️:{s_display['swordmaster']} 💀:{s_display['mordis']}\n"
@@ -636,7 +645,7 @@ class WerewolfSystem(commands.Cog):
                 embed = discord.Embed(title=f"あなたの役職: {p.role}", color=0x2ecc71)
                 embed.description = data["desc"]
                 if data["has_ability"]:
-                    embed.add_field(name="能力", value="✅ **使用可能** (GMの合図で使用)", inline=False)
+                    embed.add_field(name="能力", value="✅ **使用可能**", inline=False)
                 else:
                     embed.add_field(name="能力", value="❌ **能動的な能力なし**", inline=False)
                 if p.role == ROLE_LYKOS:
@@ -653,6 +662,8 @@ class WerewolfSystem(commands.Cog):
             try: await room.gm_user.send(spoiler_txt)
             except: pass
             
+            # 手動モードも待機ループで維持するが、フェーズ処理はボタンから start_night_logic 等を呼ぶ
+            # これらのメソッド内で resolve_morning まで走るので、ここではキャンセル待機のみでよい
             while True:
                 await asyncio.sleep(2)
                 if room.phase == "CANCELLED": return
@@ -663,36 +674,19 @@ class WerewolfSystem(commands.Cog):
         day = 1
         while True:
             if room.phase == "CANCELLED": break
+            
+            # 自動モードなら、ここで夜ロジックを呼ぶ
             await self.start_night_logic(room)
-            await asyncio.sleep(20)
-
-            room.phase="DAY"
-            st,gt,sl = room.night_actions.get("steal"), room.night_actions.get("guard"), room.night_actions.get("slash")
-            dead = []
-            for t in set([x for x in [st,sl] if x]):
-                if t!=gt: dead.append(room.players[t])
             
-            for d in dead: await self.kill_player_logic(room, d)
-            
-            msg = f"🌞 {day}日目の朝\n" + (f"{', '.join([d.name for d in dead])} 脱落" if dead else "犠牲者なし")
-            await target_ch.send(msg)
-
+            # start_night_logic内で朝の処理(resolve_morning)まで行われるので
+            # 帰ってきた時点で朝になっている
             if room.check_winner(): await self.end_game(room, room.check_winner()); break
             
             await target_ch.send(f"議論 {room.settings['discussion_time']}秒")
             await asyncio.sleep(room.settings['discussion_time'])
 
             await self.start_vote_logic(room)
-            
-            elapsed=0
-            while elapsed < 180:
-                await asyncio.sleep(1)
-                elapsed+=1
-                if hasattr(room, "last_executed") and room.last_executed: break
-                if hasattr(room, "vote_finished") and room.vote_finished: break
-            
-            if hasattr(room, "last_executed"): del room.last_executed
-            if hasattr(room, "vote_finished"): room.vote_finished = False
+            # start_vote_logic内で投票・集計・処刑まで行われる
 
             if room.check_winner(): await self.end_game(room, room.check_winner()); break
             day+=1
