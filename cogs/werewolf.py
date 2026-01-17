@@ -51,7 +51,7 @@ class GMPlayerActionView(ui.View):
         if self.target.role == ROLE_CERYDRA: status.append("x2票")
         if self.target.role == ROLE_CYRENE: status.append(f"自衛:{self.target.cyrene_guard_count} バフ:{self.target.cyrene_buff_count}")
         if self.target.role == ROLE_HYANCI: status.append(f"イカルン:{self.target.hyanci_ikarun_count}")
-        if self.target.role == ROLE_SAPHEL: status.append(f"バフ残:{self.target.cyrene_buff_count} 模倣呪:{self.target.mimicking_cyrene}")
+        if self.target.role == ROLE_SAPHEL: status.append(f"バフ残:{self.target.cyrene_buff_count} 模倣呪:{getattr(self.target, 'mimicking_cyrene', False)}")
         status_str = f" ({', '.join(status)})" if status else ""
         msg = f"👤 **{self.target.name}**\n役職: **{self.target.role}**\n状態: {'🟢生存' if self.target.is_alive else '💀死亡'}{status_str}"
         await interaction.response.send_message(msg, ephemeral=True)
@@ -380,7 +380,9 @@ class WerewolfSystem(commands.Cog):
             await room.main_ch.send(f"💀 **{player.name}** が脱落しました。")
             await room.grave_ch.send(f"🪦 **{player.name}** が火種を失い、ここに辿り着きました。")
 
-        if player.role == ROLE_CYRENE or player.mimicking_cyrene:
+        # ★修正: 属性が存在しない場合でもエラーにならないよう getattr を使用
+        is_mimicking = getattr(player, 'mimicking_cyrene', False)
+        if player.role == ROLE_CYRENE or is_mimicking:
             if room.main_ch:
                 await room.main_ch.send(f"⚠️ **{player.name}** ({ROLE_CYRENE}の力) が死亡しました！\n禁忌が破られ、オンパロス陣営の火種が全て消滅します...")
             targets = [p for p in room.get_alive() if p.team == TEAM_AMPHOREUS]
@@ -400,6 +402,7 @@ class WerewolfSystem(commands.Cog):
         if player.role == ROLE_MORDIS: player.mordis_revive_available = True
         if player.role == ROLE_CYRENE: 
             player.cyrene_guard_count = 1
+            # ★確認: ここでバフ回数を2に設定しています
             player.cyrene_buff_count = 2
         if player.role == ROLE_HYANCI:
             player.hyanci_ikarun_count = 2
