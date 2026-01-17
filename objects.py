@@ -13,6 +13,9 @@ ROLE_SWORDMASTER = "黒衣の剣士"
 ROLE_MORDIS = "モーディス"
 ROLE_CYRENE = "キュレネ"
 ROLE_CERYDRA = "ケリュドラ"
+ROLE_AGLAEA = "アグライア"
+ROLE_SAPHEL = "サフェル"
+ROLE_HYANCI = "ヒアンシー"
 
 ROLE_DATA = {
     ROLE_CITIZEN: {"desc": "能力なし。推理で戦う市民。", "has_ability": False},
@@ -20,17 +23,21 @@ ROLE_DATA = {
     ROLE_CAENEUS: {"desc": "狂人。人狼の勝利が目的。", "has_ability": False},
     ROLE_TRIBBIE: {"desc": "占い師。正体を見抜く。", "has_ability": True},
     ROLE_CASTORICE: {"desc": "霊媒師。昨日の処刑者の正体を知る。", "has_ability": False},
-    ROLE_SIRENS: {"desc": "騎士。護衛可能(自分OK、連続NG)。", "has_ability": True}, # ★変更
-    ROLE_PHAINON: {"desc": "暗殺者。夜に一人を襲撃可能だが、味方を襲うと自分も死ぬ。", "has_ability": True},
+    ROLE_SIRENS: {"desc": "騎士。護衛可能(自分OK、連続NG)。", "has_ability": True},
+    ROLE_PHAINON: {"desc": "暗殺者。敵を殺せるが味方だと自爆。", "has_ability": True},
     ROLE_SWORDMASTER: {"desc": "辻斬り(第3陣営)。生存勝利。", "has_ability": True},
     ROLE_MORDIS: {"desc": "1回襲撃を耐える。", "has_ability": False},
-    ROLE_CYRENE: {"desc": "死ぬと村全滅。1回自衛可。他者を2回バフ可能。", "has_ability": True}, # ★変更
-    ROLE_CERYDRA: {"desc": "権力者。投票が2票分になる。", "has_ability": False}
+    ROLE_CYRENE: {"desc": "死ぬと村全滅。自衛/バフが可能。", "has_ability": True},
+    ROLE_CERYDRA: {"desc": "権力者。投票が2票分になる。", "has_ability": False},
+    ROLE_AGLAEA: {"desc": "調査員。昨日の投票先を見れる。", "has_ability": True},
+    ROLE_SAPHEL: {"desc": "模倣者。相手の能力を使う(狼は死)。", "has_ability": True},
+    ROLE_HYANCI: {"desc": "コウモリ(第3陣営)。イカルンを捧げて50%生存。", "has_ability": True} # ★変更
 }
 
 TEAM_AMPHOREUS = "オンパロス陣営"
 TEAM_LYKOS = "ライコス陣営"
 TEAM_SWORDMASTER = "黒衣の剣士"
+TEAM_HYANCI = "ヒアンシー"
 
 class Player:
     def __init__(self, member: discord.Member):
@@ -42,18 +49,22 @@ class Player:
         self.mordis_revive_available = True
         
         # キュレネ用
-        self.cyrene_guard_count = 1  # 自衛残り回数
-        self.cyrene_buff_count = 2   # バフ残り回数
+        self.cyrene_guard_count = 1
+        self.cyrene_buff_count = 2
+        self.cyrene_guard_available = True # (旧互換用、countで管理推奨)
         
-        # 騎士用
-        self.last_guarded_id = None  # 昨晩守った人
+        # ヒアンシー用 ★追加
+        self.hyanci_ikarun_count = 2
+        self.hyanci_protection_active = False # イカルン使用中フラグ
         
+        self.last_guarded_id = None
         self.vote_weight = 1
 
     @property
     def team(self):
         if self.role in [ROLE_LYKOS, ROLE_CAENEUS]: return TEAM_LYKOS
         if self.role == ROLE_SWORDMASTER: return TEAM_SWORDMASTER
+        if self.role == ROLE_HYANCI: return TEAM_HYANCI
         return TEAM_AMPHOREUS
 
     @property
@@ -70,7 +81,6 @@ class GameRoom:
         self.players = {} 
         self.phase = "WAITING"
         self.gm_user = None
-        
         self.custom_settings = False
 
         self.settings = {
@@ -81,13 +91,15 @@ class GameRoom:
             "lykos": 1, "caeneus": 0,
             "tribbie": 1, "castorice": 1, "sirens": 1,
             "swordmaster": 0, "phainon": 0,
-            "mordis": 0, "cyrene": 0,
-            "cerydra": 0,
+            "mordis": 0, "cyrene": 0, "cerydra": 0,
+            "aglaea": 0, "saphel": 0, "hyanci": 0,
+            
             "discussion_time": 60
         }
         
         self.night_actions = {}
         self.votes = {}
+        self.prev_votes = {}
         self.last_executed = None
         self.cyrene_executed = False
         self.vote_finished = False
@@ -109,6 +121,7 @@ class GameRoom:
         self.phase = "WAITING"
         self.night_actions = {}
         self.votes = {}
+        self.prev_votes = {}
         self.last_executed = None
         self.cyrene_executed = False
         self.vote_finished = False
@@ -120,6 +133,8 @@ class GameRoom:
             p.mordis_revive_available = True
             p.cyrene_guard_count = 1
             p.cyrene_buff_count = 2
+            p.hyanci_ikarun_count = 2 # ★リセット
+            p.hyanci_protection_active = False
             p.last_guarded_id = None
             p.vote_weight = 1
 
@@ -135,7 +150,7 @@ class GameRoom:
         elif count == 6: s["lykos"] = 1; s["caeneus"] = 1; s["tribbie"] = 1; s["sirens"] = 1
         elif count == 7: s["lykos"] = 2; s["tribbie"] = 1; s["sirens"] = 1; s["castorice"] = 1
         elif count == 8: s["lykos"] = 2; s["caeneus"] = 1; s["tribbie"] = 1; s["sirens"] = 1; s["castorice"] = 1
-        if count >= 9: s["swordmaster"] = 1; s["phainon"] = 1
+        if count >= 9: s["swordmaster"] = 1; s["phainon"] = 1; s["aglaea"] = 1
         return s
 
     def assign_roles(self):
@@ -160,6 +175,9 @@ class GameRoom:
         roles.extend([ROLE_MORDIS]*s["mordis"])
         roles.extend([ROLE_CYRENE]*s["cyrene"])
         roles.extend([ROLE_CERYDRA]*s["cerydra"])
+        roles.extend([ROLE_AGLAEA]*s["aglaea"])
+        roles.extend([ROLE_SAPHEL]*s["saphel"])
+        roles.extend([ROLE_HYANCI]*s["hyanci"])
         
         if len(roles) > len(all_players): roles = roles[:len(all_players)]
         else: roles.extend([ROLE_CITIZEN] * (len(all_players) - len(roles)))
@@ -170,21 +188,26 @@ class GameRoom:
             if r == ROLE_CERYDRA: p.vote_weight = 2
             if r == ROLE_MORDIS: p.mordis_revive_available = True
             
-            # リセット
+            # 初期化
             p.cyrene_guard_count = 1
             p.cyrene_buff_count = 2
-            p.last_guarded_id = None
+            p.hyanci_ikarun_count = 2
+            p.hyanci_protection_active = False
 
     def check_winner(self):
         alive = self.get_alive()
         wolves = len([p for p in alive if p.role == ROLE_LYKOS])
         sm_alive = len([p for p in alive if p.role == ROLE_SWORDMASTER]) > 0
+        hy_alive = len([p for p in alive if p.role == ROLE_HYANCI]) > 0
         humans = len(alive) - wolves
-        
+
         game_over = False
         winner = None
 
-        if wolves == 0:
+        if self.cyrene_executed:
+            game_over = True
+            winner = TEAM_LYKOS
+        elif wolves == 0:
             game_over = True
             winner = TEAM_AMPHOREUS
         elif wolves >= humans:
@@ -192,7 +215,9 @@ class GameRoom:
             winner = TEAM_LYKOS
         
         if game_over:
-            if sm_alive: return TEAM_SWORDMASTER
-            return winner
+            final_winner = TEAM_SWORDMASTER if sm_alive else winner
+            if hy_alive:
+                return f"{final_winner} & {TEAM_HYANCI}"
+            return final_winner
             
         return None
