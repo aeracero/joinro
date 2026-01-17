@@ -141,81 +141,110 @@ class SettingsMenuView(ui.View):
         self.room = room
         self.update_callback = update_callback
 
-    @ui.button(label="🎭 配役設定", style=discord.ButtonStyle.primary, row=0)
-    async def role_settings(self, interaction: discord.Interaction, button: ui.Button):
-        if interaction.user.id != self.room.gm_user.id:
-            return await interaction.response.send_message("権限がありません。", ephemeral=True)
-        await interaction.response.send_modal(RoleSettingsModal(self.room, self.update_callback))
+    # 配役設定を3つに分割
+    @ui.button(label="🐺 配役:基本(人狼/村)", style=discord.ButtonStyle.primary, row=0)
+    async def role_basic(self, interaction: discord.Interaction, button: ui.Button):
+        if not self.check_perm(interaction): return
+        await interaction.response.send_modal(RoleSettingsBasicModal(self.room, self.update_callback))
 
-    @ui.button(label="⚙️ ゲーム設定", style=discord.ButtonStyle.secondary, row=0)
+    @ui.button(label="⚔️ 配役:攻撃/特殊", style=discord.ButtonStyle.primary, row=0)
+    async def role_advanced(self, interaction: discord.Interaction, button: ui.Button):
+        if not self.check_perm(interaction): return
+        await interaction.response.send_modal(RoleSettingsAdvancedModal(self.room, self.update_callback))
+
+    @ui.button(label="🦇 配役:その他", style=discord.ButtonStyle.primary, row=0)
+    async def role_extra(self, interaction: discord.Interaction, button: ui.Button):
+        if not self.check_perm(interaction): return
+        await interaction.response.send_modal(RoleSettingsExtraModal(self.room, self.update_callback))
+
+    @ui.button(label="⚙️ ゲーム設定", style=discord.ButtonStyle.secondary, row=1)
     async def game_settings(self, interaction: discord.Interaction, button: ui.Button):
-        if interaction.user.id != self.room.gm_user.id:
-            return await interaction.response.send_message("権限がありません。", ephemeral=True)
+        if not self.check_perm(interaction): return
         await interaction.response.send_modal(GameSettingsModal(self.room, self.update_callback))
 
     @ui.button(label="👥 メンバー編集", style=discord.ButtonStyle.danger, row=1)
     async def manage_members(self, interaction: discord.Interaction, button: ui.Button):
-        if interaction.user.id != self.room.gm_user.id:
-            return await interaction.response.send_message("権限がありません。", ephemeral=True)
+        if not self.check_perm(interaction): return
         await interaction.response.send_message("追放するメンバーを選択してください:", view=PlayerManagementView(self.room, self.update_callback), ephemeral=True)
 
-class RoleSettingsModal(ui.Modal, title="配役設定"):
+    def check_perm(self, interaction):
+        if interaction.user.id != self.room.gm_user.id:
+            asyncio.create_task(interaction.response.send_message("権限がありません。", ephemeral=True))
+            return False
+        return True
+
+# --- Split Role Modals ---
+
+class RoleSettingsBasicModal(ui.Modal, title="配役設定: 基本"):
     def __init__(self, room, callback):
         super().__init__()
         self.room = room
         self.callback = callback
-        
-        # 現在の設定を取得（カスタム設定がない場合は推奨設定を使用）
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
         
-        # 各カテゴリの初期値を作成
-        def_wolves = f"{s.get('lykos',0)}, {s.get('caeneus',0)}"
-        def_info = f"{s.get('tribbie',0)}, {s.get('sirens',0)}, {s.get('castorice',0)}, {s.get('aglaea',0)}"
-        def_atk = f"{s.get('swordmaster',0)}, {s.get('phainon',0)}, {s.get('saphel',0)}"
-        def_sp = f"{s.get('mordis',0)}, {s.get('cyrene',0)}, {s.get('cerydra',0)}, {s.get('hyanci',0)}"
-
-        # 入力項目
-        self.inp_wolves = ui.TextInput(label="人狼陣営 (左から順に入力)", default=def_wolves, placeholder="ライコス, カイニス (例: 1, 0)")
-        self.inp_info = ui.TextInput(label="村情報役 (左から順に入力)", default=def_info, placeholder="トリビー, セイレンス, キャストリス, アグライア")
-        self.inp_atk = ui.TextInput(label="攻撃・第3陣営 (左から順に入力)", default=def_atk, placeholder="剣士, ファイノン, サフェル")
-        self.inp_sp = ui.TextInput(label="特殊・その他 (左から順に入力)", default=def_sp, placeholder="モーディス, キュレネ, ケリュドラ, ヒアンシー")
-
-        self.add_item(self.inp_wolves)
-        self.add_item(self.inp_info)
-        self.add_item(self.inp_atk)
-        self.add_item(self.inp_sp)
-
-    def normalize(self, text):
-        return unicodedata.normalize('NFKC', text)
-
-    def parse_list(self, text, count):
-        text = self.normalize(text)
-        for sep in ['、', ' ', '　']: text = text.replace(sep, ',')
-        parts = [p.strip() for p in text.split(',') if p.strip()]
-        result = []
-        for i in range(count):
-            try: result.append(int(parts[i]))
-            except: result.append(0)
-        return result
+        self.add_item(ui.TextInput(label="🐺 ライコス (人狼)", default=str(s.get('lykos', 0))))
+        self.add_item(ui.TextInput(label="👺 カイニス (狂人)", default=str(s.get('caeneus', 0))))
+        self.add_item(ui.TextInput(label="🔮 トリビー (占い)", default=str(s.get('tribbie', 0))))
+        self.add_item(ui.TextInput(label="🛡️ セイレンス (騎士)", default=str(s.get('sirens', 0))))
+        self.add_item(ui.TextInput(label="👻 キャストリス (霊媒)", default=str(s.get('castorice', 0))))
 
     async def on_submit(self, itx):
         try:
-            wolves = self.parse_list(self.inp_wolves.value, 2)
-            info = self.parse_list(self.inp_info.value, 4)
-            atk = self.parse_list(self.inp_atk.value, 3)
-            sp = self.parse_list(self.inp_sp.value, 4)
-            
-            s = self.room.settings
-            s["lykos"], s["caeneus"] = wolves[0], wolves[1]
-            s["tribbie"], s["sirens"], s["castorice"], s["aglaea"] = info[0], info[1], info[2], info[3]
-            s["swordmaster"], s["phainon"], s["saphel"] = atk[0], atk[1], atk[2]
-            s["mordis"], s["cyrene"], s["cerydra"], s["hyanci"] = sp[0], sp[1], sp[2], sp[3]
-            
+            self.room.settings['lykos'] = int(self.children[0].value)
+            self.room.settings['caeneus'] = int(self.children[1].value)
+            self.room.settings['tribbie'] = int(self.children[2].value)
+            self.room.settings['sirens'] = int(self.children[3].value)
+            self.room.settings['castorice'] = int(self.children[4].value)
             self.room.custom_settings = True
-            await itx.response.send_message(f"✅ 配役設定を更新しました。", ephemeral=True)
+            await itx.response.send_message("✅ 基本配役を更新しました。", ephemeral=True)
             await self.callback()
-        except Exception as e:
-            await itx.response.send_message(f"エラー: {e}", ephemeral=True)
+        except: await itx.response.send_message("エラー: 数字を入力してください", ephemeral=True)
+
+class RoleSettingsAdvancedModal(ui.Modal, title="配役設定: 攻撃・特殊"):
+    def __init__(self, room, callback):
+        super().__init__()
+        self.room = room
+        self.callback = callback
+        s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
+        
+        self.add_item(ui.TextInput(label="⚔️ 黒衣の剣士 (辻斬り)", default=str(s.get('swordmaster', 0))))
+        self.add_item(ui.TextInput(label="🔪 ファイノン (暗殺)", default=str(s.get('phainon', 0))))
+        self.add_item(ui.TextInput(label="💀 モーディス (耐久)", default=str(s.get('mordis', 0))))
+        self.add_item(ui.TextInput(label="💣 キュレネ (自爆)", default=str(s.get('cyrene', 0))))
+        self.add_item(ui.TextInput(label="🐲 ケリュドラ (権力)", default=str(s.get('cerydra', 0))))
+
+    async def on_submit(self, itx):
+        try:
+            self.room.settings['swordmaster'] = int(self.children[0].value)
+            self.room.settings['phainon'] = int(self.children[1].value)
+            self.room.settings['mordis'] = int(self.children[2].value)
+            self.room.settings['cyrene'] = int(self.children[3].value)
+            self.room.settings['cerydra'] = int(self.children[4].value)
+            self.room.custom_settings = True
+            await itx.response.send_message("✅ 上級配役を更新しました。", ephemeral=True)
+            await self.callback()
+        except: await itx.response.send_message("エラー: 数字を入力してください", ephemeral=True)
+
+class RoleSettingsExtraModal(ui.Modal, title="配役設定: その他"):
+    def __init__(self, room, callback):
+        super().__init__()
+        self.room = room
+        self.callback = callback
+        s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
+        
+        self.add_item(ui.TextInput(label="🧐 アグライア (調査)", default=str(s.get('aglaea', 0))))
+        self.add_item(ui.TextInput(label="🎭 サフェル (模倣)", default=str(s.get('saphel', 0))))
+        self.add_item(ui.TextInput(label="🦇 ヒアンシー (蝙蝠)", default=str(s.get('hyanci', 0))))
+
+    async def on_submit(self, itx):
+        try:
+            self.room.settings['aglaea'] = int(self.children[0].value)
+            self.room.settings['saphel'] = int(self.children[1].value)
+            self.room.settings['hyanci'] = int(self.children[2].value)
+            self.room.custom_settings = True
+            await itx.response.send_message("✅ その他配役を更新しました。", ephemeral=True)
+            await self.callback()
+        except: await itx.response.send_message("エラー: 数字を入力してください", ephemeral=True)
 
 class GameSettingsModal(ui.Modal, title="ゲーム設定"):
     def __init__(self, room, callback):
@@ -919,11 +948,6 @@ class WerewolfSystem(commands.Cog):
         if room.check_winner():
             await self.end_game(room, room.check_winner())
 
-    # ★修正: !create コマンドを追加
-    @commands.command()
-    async def create(self, ctx):
-        await self.create_room_logic(ctx)
-
     @commands.command()
     async def wroles(self, ctx):
         embed = discord.Embed(title="📜 オンパロス戦線 役職一覧", color=0x3498db)
@@ -1079,7 +1103,7 @@ class WerewolfSystem(commands.Cog):
                         await update_panel()
                     @ui.button(label="設定", style=discord.ButtonStyle.secondary)
                     async def setting(self, itx, btn):
-                        room.gm_user = itx.user 
+                        room.gm_user = itx.user
                         await itx.response.send_message("設定メニュー:", view=SettingsMenuView(room, update_panel), ephemeral=True)
                     @ui.button(label="💥 解散", style=discord.ButtonStyle.secondary)
                     async def cancel(self, itx, btn):
