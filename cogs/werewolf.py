@@ -297,7 +297,7 @@ class RoleSettingsAdvancedModal(ui.Modal, title="配役設定: 攻撃・特殊")
         self.add_item(ui.TextInput(label=f"⚔️ {ROLE_SWORDMASTER} (辻斬り)", default=str(s.get('swordmaster', 0))))
         self.add_item(ui.TextInput(label=f"🔪 {ROLE_PHAINON} (暗殺)", default=str(s.get('phainon', 0))))
         self.add_item(ui.TextInput(label=f"💀 {ROLE_MORDIS} (耐久)", default=str(s.get('mordis', 0))))
-        self.add_item(ui.TextInput(label=f"💣 {ROLE_CYRENE} (自爆)", default=str(s.get('cyrene', 0))))
+        self.add_item(ui.TextInput(label=f"❤️ {ROLE_CYRENE} (愛)", default=str(s.get('cyrene', 0))))
         self.add_item(ui.TextInput(label=f"🐲 {ROLE_CERYDRA} (権力)", default=str(s.get('cerydra', 0))))
 
     async def on_submit(self, itx):
@@ -1039,7 +1039,7 @@ class WerewolfSystem(commands.Cog):
             m_txt = "手動" if s["mode"]=="MANUAL" else "全自動"
             role_str = (
                 f"🐺{s_display['lykos']} 狂{s_display['caeneus']} 🔮{s_display['tribbie']} 👻{s_display['castorice']} "
-                f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']} 💣{s_display['cyrene']} 👮{s_display['phainon']} 🐲{s_display['cerydra']}\n"
+                f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']} ❤️{s_display['cyrene']} 👮{s_display['phainon']} 🐲{s_display['cerydra']}\n"
                 f"🧐{s_display['aglaea']} 🎭{s_display['saphel']} 🦇{s_display['hyanci']}"
             )
             sys_str = f"閉鎖:{'ON' if s['auto_close'] else 'OFF'}, 続戦:{'ON' if s['rematch'] else 'OFF'}"
