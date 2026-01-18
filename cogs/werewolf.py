@@ -4,6 +4,7 @@ from discord import ui
 import asyncio
 import random
 import unicodedata
+import traceback
 from objects import *
 
 # --- Launcher ---
@@ -32,7 +33,7 @@ class JoinSelectionView(ui.View):
     @ui.button(label="⚔️ プレイヤー参加", style=discord.ButtonStyle.success)
     async def join_player(self, interaction: discord.Interaction, button: ui.Button):
         user = interaction.user
-        if user.id in getattr(self.room, 'spectators', {}):
+        if hasattr(self.room, 'spectators') and user.id in self.room.spectators:
             del self.room.spectators[user.id]
         
         if user.id not in self.room.players:
@@ -49,8 +50,9 @@ class JoinSelectionView(ui.View):
         if user.id in self.room.players:
             self.room.leave(user)
         
-        if user.id not in getattr(self.room, 'spectators', {}):
-            if not hasattr(self.room, 'spectators'): self.room.spectators = {}
+        if not hasattr(self.room, 'spectators'): self.room.spectators = {}
+        
+        if user.id not in self.room.spectators:
             self.room.spectators[user.id] = user
             code_str = getattr(self.room, 'code', '不明')
             await interaction.response.send_message(f"👁️ **見学席**に座りました。(部屋コード: {code_str})", ephemeral=True)
@@ -74,6 +76,43 @@ class JoinSelectionView(ui.View):
             await self.update_callback()
         else:
             await interaction.response.send_message("参加していません。", ephemeral=True)
+
+# --- Lobby View (New) ---
+class LobbyView(ui.View):
+    def __init__(self, room, update_callback, bot_system):
+        super().__init__(timeout=None)
+        self.room = room
+        self.update_callback = update_callback
+        self.bot_system = bot_system
+
+    @ui.button(label="参戦/離脱", style=discord.ButtonStyle.success)
+    async def join(self, itx: discord.Interaction, btn: ui.Button):
+        await itx.response.send_message("参加タイプを選択してください:", view=JoinSelectionView(self.room, self.update_callback), ephemeral=True)
+
+    @ui.button(label="設定", style=discord.ButtonStyle.secondary)
+    async def setting(self, itx: discord.Interaction, btn: ui.Button):
+        # 設定メニューを開く
+        self.room.gm_user = itx.user
+        await itx.response.send_message("設定メニュー:", view=SettingsMenuView(self.room, self.update_callback), ephemeral=True)
+
+    @ui.button(label="💥 解散", style=discord.ButtonStyle.secondary)
+    async def cancel(self, itx: discord.Interaction, btn: ui.Button):
+        self.room.phase = "CANCELLED"
+        # メッセージの更新はループ側で行われるか、ここで行う
+        await itx.response.send_message("部屋を解散します...", ephemeral=True)
+        self.stop()
+
+    @ui.button(label="開戦", style=discord.ButtonStyle.danger)
+    async def start(self, itx: discord.Interaction, btn: ui.Button):
+        if self.room.settings["mode"] == "MANUAL":
+            self.room.gm_user = itx.user
+        if len(self.room.players) < 2:
+            await itx.response.send_message("人数不足です（最低2名）。", ephemeral=True)
+            return
+        await itx.response.send_message("会場設営中...", ephemeral=True)
+        self.stop()
+        self.room.phase = "STARTING"
+
 
 # --- GM Actions ---
 class GMPlayerActionView(ui.View):
@@ -566,7 +605,6 @@ class WerewolfSystem(commands.Cog):
             await room.main_ch.send(f"💀 **{player.name}** が脱落しました。")
             await room.grave_ch.send(f"🪦 **{player.name}** が火種を失い、ここに辿り着きました。")
 
-        # ★修正: 属性が存在しない場合でもエラーにならないよう getattr を使用
         is_mimicking = getattr(player, 'mimicking_cyrene', False)
         if player.role == ROLE_CYRENE or is_mimicking:
             if room.main_ch:
@@ -588,7 +626,6 @@ class WerewolfSystem(commands.Cog):
         if player.role == ROLE_MORDIS: player.mordis_revive_available = True
         if player.role == ROLE_CYRENE: 
             player.cyrene_guard_count = 1
-            # ★確認: ここでバフ回数を2に設定しています
             player.cyrene_buff_count = 2
         if player.role == ROLE_HYANCI:
             player.hyanci_ikarun_count = 2
@@ -623,8 +660,6 @@ class WerewolfSystem(commands.Cog):
 
         async def cb(itx, player, act, val):
             room.night_actions[act] = val
-            
-            # ★Fix: 変数定義を前に持ってくる
             target = None
             target_name = "なし"
             if val == "self_guard": target_name = "自分"
@@ -663,7 +698,6 @@ class WerewolfSystem(commands.Cog):
                             u = self.bot.get_user(player.id)
                             await u.send(msg, view=NightActionView(room, player, "mimic_2nd", cb))
                         except: pass
-                        # pendingは維持
                     else:
                         await itx.response.edit_message(content=f"🎭 {target.name} ({target.role}) を模倣しました。", view=None)
                         room.night_actions["mimic"] = {'source': val, 'target': None}
@@ -1077,14 +1111,20 @@ class WerewolfSystem(commands.Cog):
         if isinstance(itx_or_ctx, discord.Interaction):
             channel = itx_or_ctx.channel
             user = itx_or_ctx.user
-            if not itx_or_ctx.response.is_done(): await itx_or_ctx.response.send_message("ロビー作成...", ephemeral=True)
+            # 応答待ち
+            await itx_or_ctx.response.send_message("ロビー作成中...", ephemeral=True)
         else:
             channel = itx_or_ctx.channel
             user = itx_or_ctx.author
+        
         if channel is None: return
 
         if channel.id in self.rooms:
-            if not isinstance(itx_or_ctx, discord.Interaction): await channel.send("既に部屋があります。")
+            msg = "このチャンネルには既に部屋があります。"
+            if isinstance(itx_or_ctx, discord.Interaction):
+                await itx_or_ctx.followup.send(msg, ephemeral=True)
+            else:
+                await channel.send(msg)
             return
 
         room = GameRoom(channel)
@@ -1097,73 +1137,56 @@ class WerewolfSystem(commands.Cog):
         asyncio.create_task(self.game_loop(channel, room))
 
     async def game_loop(self, channel, room):
-        msg = None  # 初期化
-        view = None # 初期化
+        # メッセージ管理変数をroomに持たせる
+        room.lobby_msg = None
+        
+        # パネル更新関数 (roomから呼び出せるようにする)
+        async def update_panel():
+            if not room.lobby_msg: return
+            
+            s = room.settings
+            if not room.custom_settings:
+                rec = room.get_recommended_settings(len(room.players))
+                s_display = rec
+                note = "(自動)"
+            else:
+                s_display = s
+                note = "(カスタム)"
+            m_txt = "手動" if s["mode"]=="MANUAL" else "全自動"
+            role_str = (
+                f"🐺{s_display['lykos']} 狂{s_display['caeneus']} 🔮{s_display['tribbie']} 👻{s_display['castorice']} "
+                f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']} 💣{s_display['cyrene']} 👮{s_display['phainon']} 🐲{s_display['cerydra']}\n"
+                f"🧐{s_display['aglaea']} 🎭{s_display['saphel']} 🦇{s_display['hyanci']}"
+            )
+            sys_str = f"閉鎖:{'ON' if s['auto_close'] else 'OFF'}, 続戦:{'ON' if s['rematch'] else 'OFF'}"
+            
+            embed = discord.Embed(title="参加者募集中", description=f"{m_txt} {note}\n{sys_str}\n{role_str}", color=0x9b59b6)
+            embed.add_field(name="🔑 部屋コード", value=f"`{room.code}`", inline=False)
+            
+            p_names = "\n".join([p.name for p in room.players.values()])
+            s_names = "\n".join([u.display_name for u in room.spectators.values()])
+            
+            embed.add_field(name=f"参加者 {len(room.players)}名", value=p_names or "なし")
+            embed.add_field(name=f"見学者 {len(room.spectators)}名", value=s_names or "なし")
+            
+            try:
+                # Viewを再生成して渡す
+                new_view = LobbyView(room, update_panel, self)
+                await room.lobby_msg.edit(embed=embed, view=new_view)
+            except Exception as e:
+                print(f"Update panel error: {e}")
+
+        # コールバック登録
+        room.update_panel_callback = update_panel
+
         try:
             while True:
-                # パネル更新関数
-                async def update_panel():
-                    s = room.settings
-                    if not room.custom_settings:
-                        rec = room.get_recommended_settings(len(room.players))
-                        s_display = rec
-                        note = "(自動)"
-                    else:
-                        s_display = s
-                        note = "(カスタム)"
-                    m_txt = "手動" if s["mode"]=="MANUAL" else "全自動"
-                    role_str = (
-                        f"🐺{s_display['lykos']} 狂{s_display['caeneus']} 🔮{s_display['tribbie']} 👻{s_display['castorice']} "
-                        f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']} 💣{s_display['cyrene']} 👮{s_display['phainon']} 🐲{s_display['cerydra']}\n"
-                        f"🧐{s_display['aglaea']} 🎭{s_display['saphel']} 🦇{s_display['hyanci']}"
-                    )
-                    sys_str = f"閉鎖:{'ON' if s['auto_close'] else 'OFF'}, 続戦:{'ON' if s['rematch'] else 'OFF'}"
-                    
-                    embed = discord.Embed(title="参加者募集中", description=f"{m_txt} {note}\n{sys_str}\n{role_str}", color=0x9b59b6)
-                    # 部屋コードを表示
-                    embed.add_field(name="🔑 部屋コード", value=f"`{room.code}`", inline=False)
-                    
-                    p_names = "\n".join([p.name for p in room.players.values()])
-                    s_names = "\n".join([u.display_name for u in room.spectators.values()])
-                    
-                    embed.add_field(name=f"参加者 {len(room.players)}名", value=p_names or "なし")
-                    embed.add_field(name=f"見学者 {len(room.spectators)}名", value=s_names or "なし")
-                    
-                    if msg:
-                        try: await msg.edit(embed=embed, view=view)
-                        except: pass
-                
-                # ★重要: 外部から呼べるように登録
-                room.update_panel_callback = update_panel
-
-                class LobbyView(ui.View):
-                    def __init__(self): super().__init__(timeout=None)
-                    @ui.button(label="参戦/離脱", style=discord.ButtonStyle.success)
-                    async def join(self, itx, btn):
-                        await itx.response.send_message("参加タイプを選択してください:", view=JoinSelectionView(room, update_panel), ephemeral=True)
-                    @ui.button(label="設定", style=discord.ButtonStyle.secondary)
-                    async def setting(self, itx, btn):
-                        room.gm_user = itx.user
-                        await itx.response.send_message("設定メニュー:", view=SettingsMenuView(room, update_panel), ephemeral=True)
-                    @ui.button(label="💥 解散", style=discord.ButtonStyle.secondary)
-                    async def cancel(self, itx, btn):
-                        room.phase = "CANCELLED"
-                        await msg.edit(content="💥 解散。", embed=None, view=None)
-                        self.stop()
-                    @ui.button(label="開戦", style=discord.ButtonStyle.danger)
-                    async def start(self, itx, btn):
-                        if room.settings["mode"]=="MANUAL": room.gm_user = itx.user
-                        if len(room.players)<2:
-                            await itx.response.send_message("人数不足", ephemeral=True)
-                            return
-                        await itx.response.send_message("会場設営中...")
-                        self.stop()
-                        room.phase = "STARTING"
-
-                view = LobbyView()
-                msg = await channel.send(embed=discord.Embed(title="待機中..."), view=view)
+                # 初回メッセージ送信
+                view = LobbyView(room, update_panel, self)
+                room.lobby_msg = await channel.send(embed=discord.Embed(title="待機中..."), view=view)
                 await update_panel()
 
+                # 待機
                 while room.phase == "WAITING":
                     await asyncio.sleep(1)
                     if room.phase == "CANCELLED":
@@ -1197,6 +1220,7 @@ class WerewolfSystem(commands.Cog):
 
         except Exception as e:
             await channel.send(f"⚠️ エラー発生: {e}")
+            traceback.print_exc()
         finally:
             if channel.id in self.rooms:
                 r = self.rooms[channel.id]

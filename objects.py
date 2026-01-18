@@ -1,21 +1,21 @@
 import discord
 import random
 
-# --- 役職定義 ---
-ROLE_CITIZEN = "タイタンの末裔"
-ROLE_LYKOS = "ライコス"
-ROLE_CAENEUS = "カイニス"
-ROLE_TRIBBIE = "トリビー"
-ROLE_CASTORICE = "キャストリス"
-ROLE_SIRENS = "セイレンス"
-ROLE_PHAINON = "ファイノン"
-ROLE_SWORDMASTER = "黒衣の剣士"
-ROLE_MORDIS = "モーディス"
-ROLE_CYRENE = "キュレネ"
-ROLE_CERYDRA = "ケリュドラ"
-ROLE_AGLAEA = "アグライア"
-ROLE_SAPHEL = "サフェル"
-ROLE_HYANCI = "ヒアンシー"
+# --- 役職定義 (火種・概念名へ変更) ---
+ROLE_CITIZEN = "市民"          # 旧: タイタンの末裔
+ROLE_LYKOS = "神礼の観衆"            # 旧: ライコス (指定: 人狼)
+ROLE_CAENEUS = "カスニス"      # そのまま
+ROLE_TRIBBIE = "門と道"        # 旧: トリビー (指定: 門と道)
+ROLE_CASTORICE = "死と生" # そのまま
+ROLE_SIRENS = "海洋"     # そのまま
+ROLE_PHAINON = "世負い"    # そのまま
+ROLE_SWORDMASTER = "黒衣の剣士" # そのまま
+ROLE_MORDIS = "紛争"     # そのまま
+ROLE_CYRENE = "真我"       # そのまま
+ROLE_CERYDRA = "法"    # そのまま
+ROLE_AGLAEA = "浪漫"          # 旧: アグライア (指定: 浪漫)
+ROLE_SAPHEL = "詭術"       # そのまま
+ROLE_HYANCI = "天空"     # そのまま
 
 ROLE_DATA = {
     ROLE_CITIZEN: {"desc": "能力なし。推理で戦う市民。", "has_ability": False},
@@ -27,7 +27,7 @@ ROLE_DATA = {
     ROLE_PHAINON: {"desc": "暗殺者。敵を殺せるが味方だと自爆。", "has_ability": True},
     ROLE_SWORDMASTER: {"desc": "辻斬り(第3陣営)。生存勝利。", "has_ability": True},
     ROLE_MORDIS: {"desc": "1回襲撃を耐える。", "has_ability": False},
-    ROLE_CYRENE: {"desc": "死ぬと村全滅。自衛1回/バフ2回。", "has_ability": True},
+    ROLE_CYRENE: {"desc": "愛されてるので死ぬと村が全滅する。愛されてるので強力な自衛1回/バフ2回を使う。", "has_ability": True},
     ROLE_CERYDRA: {"desc": "権力者。投票が2票分になる。", "has_ability": False},
     ROLE_AGLAEA: {"desc": "調査員。昨日の投票先を見れる。", "has_ability": True},
     ROLE_SAPHEL: {"desc": "模倣者。相手の能力を使う(狼は死)。", "has_ability": True},
@@ -79,8 +79,10 @@ class GameRoom:
         self.category = None
         self.main_ch = None
         self.grave_ch = None
+        self.code = "0000" # 初期値
         
         self.players = {} 
+        self.spectators = {}
         self.phase = "WAITING"
         self.gm_user = None
         self.custom_settings = False
@@ -105,6 +107,8 @@ class GameRoom:
         self.last_executed = None
         self.cyrene_executed = False
         self.vote_finished = False
+        self.lobby_msg = None
+        self.update_panel_callback = None
 
     def join(self, member):
         if member.id not in self.players:
@@ -127,9 +131,7 @@ class GameRoom:
         self.last_executed = None
         self.cyrene_executed = False
         self.vote_finished = False
-        self.category = None
-        self.main_ch = None
-        self.grave_ch = None
+        # カテゴリ・チャンネルは維持
         for p in self.players.values():
             p.is_alive = True
             p.mordis_revive_available = False
