@@ -1,43 +1,43 @@
 import discord
 import random
 
-# --- 役職定義 (火種・概念名へ変更) ---
-ROLE_CITIZEN = "市民"          # 旧: タイタンの末裔
-ROLE_LYKOS = "神礼の観衆"            # 旧: ライコス (指定: 人狼)
-ROLE_CAENEUS = "カスニス"      # そのまま
-ROLE_TRIBBIE = "門と道"        # 旧: トリビー (指定: 門と道)
-ROLE_CASTORICE = "死と生" # そのまま
-ROLE_SIRENS = "海洋"     # そのまま
-ROLE_PHAINON = "世負い"    # そのまま
-ROLE_SWORDMASTER = "黒衣の剣士" # そのまま
-ROLE_MORDIS = "紛争"     # そのまま
-ROLE_CYRENE = "真我"       # そのまま
-ROLE_CERYDRA = "法"    # そのまま
-ROLE_AGLAEA = "浪漫"          # 旧: アグライア (指定: 浪漫)
-ROLE_SAPHEL = "詭術"       # そのまま
-ROLE_HYANCI = "天空"     # そのまま
+# --- 役職定義 (一般的な人狼用語へ変更) ---
+ROLE_CITIZEN = "市民"
+ROLE_LYKOS = "人狼"
+ROLE_CAENEUS = "狂人"
+ROLE_TRIBBIE = "占い師"
+ROLE_CASTORICE = "霊媒師"
+ROLE_SIRENS = "騎士"
+ROLE_PHAINON = "暗殺者"
+ROLE_SWORDMASTER = "辻斬り"
+ROLE_MORDIS = "長老"
+ROLE_CYRENE = "聖女"
+ROLE_CERYDRA = "富豪"
+ROLE_AGLAEA = "探偵"
+ROLE_SAPHEL = "模倣者"
+ROLE_HYANCI = "蝙蝠"
 
 ROLE_DATA = {
     ROLE_CITIZEN: {"desc": "能力なし。推理で戦う市民。", "has_ability": False},
-    ROLE_LYKOS: {"desc": "人狼。夜に襲撃可能。", "has_ability": True},
-    ROLE_CAENEUS: {"desc": "狂人。人狼の勝利が目的。", "has_ability": False},
-    ROLE_TRIBBIE: {"desc": "占い師。正体を見抜く。", "has_ability": True},
-    ROLE_CASTORICE: {"desc": "霊媒師。昨日の処刑者の正体を知る。", "has_ability": False},
-    ROLE_SIRENS: {"desc": "騎士。護衛可能(自分OK、連続NG)。", "has_ability": True},
-    ROLE_PHAINON: {"desc": "暗殺者。敵を殺せるが味方だと自爆。", "has_ability": True},
-    ROLE_SWORDMASTER: {"desc": "辻斬り(第3陣営)。生存勝利。", "has_ability": True},
-    ROLE_MORDIS: {"desc": "1回襲撃を耐える。", "has_ability": False},
-    ROLE_CYRENE: {"desc": "愛されてるので死ぬと村が全滅する。愛されてるので強力な自衛1回/バフ2回を使う。", "has_ability": True},
-    ROLE_CERYDRA: {"desc": "権力者。投票が2票分になる。", "has_ability": False},
-    ROLE_AGLAEA: {"desc": "調査員。昨日の投票先を見れる。", "has_ability": True},
-    ROLE_SAPHEL: {"desc": "模倣者。相手の能力を使う(狼は死)。", "has_ability": True},
-    ROLE_HYANCI: {"desc": "コウモリ(第3陣営)。イカルンを捧げて50%生存。", "has_ability": True}
+    ROLE_LYKOS: {"desc": "夜に襲撃可能。", "has_ability": True},
+    ROLE_CAENEUS: {"desc": "人狼の勝利が目的。", "has_ability": False},
+    ROLE_TRIBBIE: {"desc": "夜に一人を占い、人狼か否かを知る。", "has_ability": True},
+    ROLE_CASTORICE: {"desc": "昨日の処刑者の正体(人狼か否か)を知る。", "has_ability": False},
+    ROLE_SIRENS: {"desc": "夜に一人を護衛可能(自分OK、連続NG)。", "has_ability": True},
+    ROLE_PHAINON: {"desc": "夜に一人を暗殺可能。ただし相手が人狼以外だと自爆する。", "has_ability": True},
+    ROLE_SWORDMASTER: {"desc": "第3陣営。毎晩一人を襲撃可能。最後まで生存すれば勝利。", "has_ability": True},
+    ROLE_MORDIS: {"desc": "人狼の襲撃を1回耐える。", "has_ability": False},
+    ROLE_CYRENE: {"desc": "死亡すると村人陣営が敗北する(全滅)。自衛1回/バフ2回。", "has_ability": True},
+    ROLE_CERYDRA: {"desc": "投票時の票数が2票分になる。", "has_ability": False},
+    ROLE_AGLAEA: {"desc": "昨日の投票先を一人調査できる。", "has_ability": True},
+    ROLE_SAPHEL: {"desc": "他者の能力を模倣して使用する(人狼を模倣すると死亡)。", "has_ability": True},
+    ROLE_HYANCI: {"desc": "第3陣営。生存すれば勝利。供物を捧げて50%で死を回避。", "has_ability": True}
 }
 
-TEAM_AMPHOREUS = "オンパロス陣営"
-TEAM_LYKOS = "ライコス陣営"
-TEAM_SWORDMASTER = "黒衣の剣士"
-TEAM_HYANCI = "ヒアンシー"
+TEAM_AMPHOREUS = "村人陣営"
+TEAM_LYKOS = "人狼陣営"
+TEAM_SWORDMASTER = "辻斬り"
+TEAM_HYANCI = "蝙蝠"
 
 class Player:
     def __init__(self, member: discord.Member):
@@ -48,15 +48,15 @@ class Player:
         self.is_alive = True
         self.mordis_revive_available = False
         
-        # キュレネ用
+        # 聖女(キュレネ)用
         self.cyrene_guard_count = 1
         self.cyrene_buff_count = 2
         
-        # ヒアンシー用
+        # 蝙蝠(ヒアンシー)用
         self.hyanci_ikarun_count = 2
         self.hyanci_protection_active = False
         
-        # サフェル用
+        # 模倣者(サフェル)用
         self.mimicking_cyrene = False 
         
         self.last_guarded_id = None

@@ -13,7 +13,7 @@ class Launcher(ui.View):
         super().__init__(timeout=None)
         self.bot_system = bot_system
     
-    @ui.button(label="⚔️ オンパロス戦線を作成", style=discord.ButtonStyle.primary, custom_id="ww_create_room")
+    @ui.button(label="🐺 人狼ゲームを作成", style=discord.ButtonStyle.primary, custom_id="ww_create_room")
     async def create_room(self, interaction: discord.Interaction, button: ui.Button):
         system = self.bot_system
         if system is None:
@@ -140,7 +140,7 @@ class GMPlayerActionView(ui.View):
         if self.target.mordis_revive_available: status.append("復活:有")
         if self.target.role == ROLE_CERYDRA: status.append("x2票")
         if self.target.role == ROLE_CYRENE: status.append(f"自衛:{self.target.cyrene_guard_count} バフ:{self.target.cyrene_buff_count}")
-        if self.target.role == ROLE_HYANCI: status.append(f"イカルン:{self.target.hyanci_ikarun_count}")
+        if self.target.role == ROLE_HYANCI: status.append(f"供物:{self.target.hyanci_ikarun_count}")
         if self.target.role == ROLE_SAPHEL: status.append(f"バフ残:{self.target.cyrene_buff_count} 模倣呪:{getattr(self.target, 'mimicking_cyrene', False)}")
         status_str = f" ({', '.join(status)})" if status else ""
         msg = f"👤 **{self.target.name}**\n役職: **{self.target.role}**\n状態: {'🟢生存' if self.target.is_alive else '💀死亡'}{status_str}"
@@ -269,11 +269,11 @@ class RoleSettingsBasicModal(ui.Modal, title="配役設定: 基本"):
         self.callback = callback
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
         
-        self.add_item(ui.TextInput(label=f"🐺 {ROLE_LYKOS} (人狼)", default=str(s.get('lykos', 0))))
-        self.add_item(ui.TextInput(label=f"👺 {ROLE_CAENEUS} (狂人)", default=str(s.get('caeneus', 0))))
-        self.add_item(ui.TextInput(label=f"🔮 {ROLE_TRIBBIE} (占い)", default=str(s.get('tribbie', 0))))
-        self.add_item(ui.TextInput(label=f"🛡️ {ROLE_SIRENS} (騎士)", default=str(s.get('sirens', 0))))
-        self.add_item(ui.TextInput(label=f"👻 {ROLE_CASTORICE} (霊媒)", default=str(s.get('castorice', 0))))
+        self.add_item(ui.TextInput(label=f"🐺 {ROLE_LYKOS}", default=str(s.get('lykos', 0))))
+        self.add_item(ui.TextInput(label=f"👺 {ROLE_CAENEUS}", default=str(s.get('caeneus', 0))))
+        self.add_item(ui.TextInput(label=f"🔮 {ROLE_TRIBBIE}", default=str(s.get('tribbie', 0))))
+        self.add_item(ui.TextInput(label=f"🛡️ {ROLE_SIRENS}", default=str(s.get('sirens', 0))))
+        self.add_item(ui.TextInput(label=f"👻 {ROLE_CASTORICE}", default=str(s.get('castorice', 0))))
 
     async def on_submit(self, itx):
         try:
@@ -294,11 +294,11 @@ class RoleSettingsAdvancedModal(ui.Modal, title="配役設定: 攻撃・特殊")
         self.callback = callback
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
         
-        self.add_item(ui.TextInput(label=f"⚔️ {ROLE_SWORDMASTER} (辻斬り)", default=str(s.get('swordmaster', 0))))
-        self.add_item(ui.TextInput(label=f"🔪 {ROLE_PHAINON} (暗殺)", default=str(s.get('phainon', 0))))
-        self.add_item(ui.TextInput(label=f"💀 {ROLE_MORDIS} (耐久)", default=str(s.get('mordis', 0))))
-        self.add_item(ui.TextInput(label=f"❤️ {ROLE_CYRENE} (愛)", default=str(s.get('cyrene', 0))))
-        self.add_item(ui.TextInput(label=f"🐲 {ROLE_CERYDRA} (権力)", default=str(s.get('cerydra', 0))))
+        self.add_item(ui.TextInput(label=f"⚔️ {ROLE_SWORDMASTER}", default=str(s.get('swordmaster', 0))))
+        self.add_item(ui.TextInput(label=f"🔪 {ROLE_PHAINON}", default=str(s.get('phainon', 0))))
+        self.add_item(ui.TextInput(label=f"💀 {ROLE_MORDIS}", default=str(s.get('mordis', 0))))
+        self.add_item(ui.TextInput(label=f"🩸 {ROLE_CYRENE}", default=str(s.get('cyrene', 0))))
+        self.add_item(ui.TextInput(label=f"💰 {ROLE_CERYDRA}", default=str(s.get('cerydra', 0))))
 
     async def on_submit(self, itx):
         try:
@@ -319,9 +319,9 @@ class RoleSettingsExtraModal(ui.Modal, title="配役設定: その他"):
         self.callback = callback
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
         
-        self.add_item(ui.TextInput(label=f"🧐 {ROLE_AGLAEA} (調査)", default=str(s.get('aglaea', 0))))
-        self.add_item(ui.TextInput(label=f"🎭 {ROLE_SAPHEL} (模倣)", default=str(s.get('saphel', 0))))
-        self.add_item(ui.TextInput(label=f"🦇 {ROLE_HYANCI} (蝙蝠)", default=str(s.get('hyanci', 0))))
+        self.add_item(ui.TextInput(label=f"🧐 {ROLE_AGLAEA}", default=str(s.get('aglaea', 0))))
+        self.add_item(ui.TextInput(label=f"🎭 {ROLE_SAPHEL}", default=str(s.get('saphel', 0))))
+        self.add_item(ui.TextInput(label=f"🦇 {ROLE_HYANCI}", default=str(s.get('hyanci', 0))))
 
     async def on_submit(self, itx):
         try:
@@ -487,7 +487,7 @@ class HyanciActionView(ui.View):
         self.room = room
         self.player = player
         self.callback = callback
-    @ui.button(label="🦇 イカルンを捧げる (消費:1)", style=discord.ButtonStyle.danger)
+    @ui.button(label="🦇 供物を捧げる (消費:1)", style=discord.ButtonStyle.danger)
     async def use_ikarun(self, itx, btn):
         await self.callback(itx, self.player, "hyanci_ikarun", "use")
     @ui.button(label="何もしない", style=discord.ButtonStyle.secondary)
@@ -554,7 +554,7 @@ class WerewolfSystem(commands.Cog):
             cat_ov[room.gm_user] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
         try:
-            cat_name = f"⚔️ オンパロス戦線-{room.code}"
+            cat_name = f"🐺 人狼ゲーム-{room.code}"
             room.category = await guild.create_category(cat_name, overwrites=cat_ov)
             
             main_ov = cat_ov.copy()
@@ -573,7 +573,6 @@ class WerewolfSystem(commands.Cog):
             # 部屋IDを新しいメインチャンネルIDで登録し直す
             self.rooms[room.main_ch.id] = room
             
-            # ★修正: 参加者全員へのメンションを追加
             mentions = [p.member.mention for p in room.players.values()]
             mention_str = " ".join(mentions) if mentions else ""
             
@@ -601,7 +600,7 @@ class WerewolfSystem(commands.Cog):
             if random.random() < 0.5:
                 try:
                     u = self.bot.get_user(player.id)
-                    await u.send("🦇 **イカルン** の加護により死を免れました！")
+                    await u.send("🦇 **供物** の加護により死を免れました！")
                 except: pass
                 return False 
 
@@ -611,19 +610,19 @@ class WerewolfSystem(commands.Cog):
             await room.main_ch.set_permissions(player.member, read_messages=True, send_messages=False)
             await room.grave_ch.set_permissions(player.member, read_messages=True, send_messages=True)
             await room.main_ch.send(f"💀 **{player.name}** が脱落しました。")
-            await room.grave_ch.send(f"🪦 **{player.name}** が火種を失い、ここに辿り着きました。")
+            await room.grave_ch.send(f"🪦 **{player.name}** が命を失い、ここに辿り着きました。")
 
         is_mimicking = getattr(player, 'mimicking_cyrene', False)
         if player.role == ROLE_CYRENE or is_mimicking:
             if room.main_ch:
-                await room.main_ch.send(f"⚠️ **{player.name}** ({ROLE_CYRENE}の力) が死亡しました！\n禁忌が破られ、オンパロス陣営の火種が全て消滅します...")
+                await room.main_ch.send(f"⚠️ **{player.name}** ({ROLE_CYRENE}の力) が死亡しました！\n禁忌が破られ、村人陣営の命が全て消滅します...")
             targets = [p for p in room.get_alive() if p.team == TEAM_AMPHOREUS]
             for t in targets:
                 t.is_alive = False
                 if room.main_ch and room.grave_ch:
                     await room.main_ch.set_permissions(t.member, read_messages=True, send_messages=False)
                     await room.grave_ch.set_permissions(t.member, read_messages=True, send_messages=True)
-                    await room.grave_ch.send(f"🪦 **{t.name}** がキュレネの死に伴い消滅しました。")
+                    await room.grave_ch.send(f"🪦 **{t.name}** が聖女の死に伴い消滅しました。")
         
         return True
 
@@ -647,7 +646,7 @@ class WerewolfSystem(commands.Cog):
         if room.main_ch and room.grave_ch:
             await room.main_ch.set_permissions(player.member, read_messages=True, send_messages=True)
             await room.grave_ch.set_permissions(player.member, overwrite=None)
-            await room.main_ch.send(f"😇 奇跡が起き、**{player.name}** の火種が戻りました！（能力も全快）")
+            await room.main_ch.send(f"😇 奇跡が起き、**{player.name}** の命が戻りました！（能力も全快）")
             await room.grave_ch.send(f"😇 **{player.name}** が蘇生され、戦場へ戻りました。")
 
     async def start_night_logic(self, room):
@@ -671,7 +670,7 @@ class WerewolfSystem(commands.Cog):
             target = None
             target_name = "なし"
             if val == "self_guard": target_name = "自分"
-            elif val == "use": target_name = "イカルン"
+            elif val == "use": target_name = "供物"
             elif isinstance(val, int):
                 target = room.players.get(val)
                 if target: target_name = target.name
@@ -687,17 +686,15 @@ class WerewolfSystem(commands.Cog):
                     await itx.response.edit_message(content="🎭 スキップしました。", view=None)
                     pending_actors.discard(player.id)
                 elif isinstance(val, int):
-                    # target is already set above
                     if not target: return
-                    
                     room.night_actions["mimic_src"] = val
                     action_map = {
-                        ROLE_TRIBBIE: "🔮 模倣: 誰を占いますか？",
-                        ROLE_SIRENS: "🛡️ 模倣: 誰を護衛しますか？",
-                        ROLE_SWORDMASTER: "⚔️ 模倣: 誰を襲撃しますか？",
-                        ROLE_PHAINON: "🔪 模倣: 誰を暗殺しますか？",
-                        ROLE_AGLAEA: "🧐 模倣: 誰の投票先を調べますか？",
-                        ROLE_CYRENE: "🐲 模倣: 誰にバフを与えますか？"
+                        ROLE_TRIBBIE: f"🔮 模倣: 誰を占いますか？",
+                        ROLE_SIRENS: f"🛡️ 模倣: 誰を護衛しますか？",
+                        ROLE_SWORDMASTER: f"⚔️ 模倣: 誰を襲撃しますか？",
+                        ROLE_PHAINON: f"🔪 模倣: 誰を暗殺しますか？",
+                        ROLE_AGLAEA: f"🧐 模倣: 誰の投票先を調べますか？",
+                        ROLE_CYRENE: f"🐲 模倣: 誰にバフを与えますか？"
                     }
                     if target.role in action_map:
                         msg = action_map[target.role]
@@ -722,7 +719,7 @@ class WerewolfSystem(commands.Cog):
                 await itx.response.edit_message(content=f"💪 {target_name} に力を与えました。", view=None)
                 
                 action_map = {
-                    ROLE_LYKOS: ("steal_2nd", "【バフ効果】 2人目の強奪対象を選んでください"),
+                    ROLE_LYKOS: ("steal_2nd", "【バフ効果】 2人目の襲撃対象を選んでください"),
                     ROLE_TRIBBIE: ("divine_2nd", "【バフ効果】 2人目の占い対象を選んでください"),
                     ROLE_SIRENS: ("guard_2nd", "【バフ効果】 2人目の護衛対象を選んでください"),
                     ROLE_SWORDMASTER: ("slash_2nd", "【バフ効果】 2人目の辻斬り対象を選んでください"),
@@ -746,13 +743,13 @@ class WerewolfSystem(commands.Cog):
                 if val == "use":
                     player.hyanci_ikarun_count -= 1
                     player.hyanci_protection_active = True
-                    await itx.response.edit_message(content=f"🦇 イカルンを捧げました。(残{player.hyanci_ikarun_count})", view=None)
+                    await itx.response.edit_message(content=f"🦇 供物を捧げました。(残{player.hyanci_ikarun_count})", view=None)
                 else:
                     await itx.response.edit_message(content="🦇 何もしませんでした。", view=None)
                 pending_actors.discard(player.id)
 
             elif act in ["divine"]:
-                res = "ライコス" if target and target.is_wolf_side else "人間"
+                res = "人狼" if target and target.is_wolf_side else "人間"
                 await itx.response.edit_message(content=f"🔮 判定: {target_name}は**{res}**", view=None)
                 if room.gm_user: await room.gm_user.send(f"🔮 {player.name} -> {target_name} : {res}")
                 pending_actors.discard(player.id)
@@ -777,7 +774,7 @@ class WerewolfSystem(commands.Cog):
                 pending_actors.discard(player.id)
             
             else:
-                act_str = {"steal":"強奪", "guard":"護衛", "slash":"辻斬り", "assassinate":"暗殺"}.get(act, act)
+                act_str = {"steal":"襲撃", "guard":"護衛", "slash":"辻斬り", "assassinate":"暗殺"}.get(act, act)
                 await itx.response.edit_message(content=f"✅ {target_name}を選択 ({act_str})", view=None)
                 if room.gm_user: await room.gm_user.send(f"🌙 {player.name} ({player.role}) -> {target_name}")
                 pending_actors.discard(player.id)
@@ -786,7 +783,7 @@ class WerewolfSystem(commands.Cog):
         for p in room.get_alive():
             view, msg = None, ""
             
-            if p.role == ROLE_LYKOS: view=NightActionView(room,p,"steal",cb); msg="【強奪】 誰を狙いますか？"
+            if p.role == ROLE_LYKOS: view=NightActionView(room,p,"steal",cb); msg="【襲撃】 誰を狙いますか？"
             elif p.role == ROLE_TRIBBIE: view=NightActionView(room,p,"divine",cb); msg="【占い】 誰を占いますか？"
             elif p.role == ROLE_SIRENS: view=NightActionView(room,p,"guard",cb); msg="【護衛】 誰を守りますか？"
             elif p.role == ROLE_SWORDMASTER: view=NightActionView(room,p,"slash",cb); msg="【辻斬り】 誰を狙いますか？"
@@ -831,9 +828,9 @@ class WerewolfSystem(commands.Cog):
             if p.role == ROLE_HYANCI:
                 if p.hyanci_ikarun_count > 0:
                     v3 = HyanciActionView(room, p, cb)
-                    tasks.append(self.bot.get_user(p.id).send("【生存】 イカルンを使用しますか？", view=v3))
+                    tasks.append(self.bot.get_user(p.id).send("【生存】 供物を使用しますか？", view=v3))
                 else:
-                    embed = discord.Embed(title="🌙 アクションなし", description="イカルン切れ。", color=0x2c3e50)
+                    embed = discord.Embed(title="🌙 アクションなし", description="供物切れ。", color=0x2c3e50)
                     tasks.append(self.bot.get_user(p.id).send(embed=embed))
                     pending_actors.discard(p.id)
 
@@ -863,7 +860,7 @@ class WerewolfSystem(commands.Cog):
         
         if room.last_executed:
             mediums = [p for p in room.get_alive() if p.role == ROLE_CASTORICE]
-            species = "ライコス (人狼)" if room.last_executed.is_wolf_side else "人間"
+            species = "人狼" if room.last_executed.is_wolf_side else "人間"
             for medium in mediums:
                 try:
                     u = self.bot.get_user(medium.id)
@@ -884,14 +881,14 @@ class WerewolfSystem(commands.Cog):
             if src:
                 if src.role == ROLE_LYKOS:
                     dead_candidates.append(saphel_actor)
-                    if room.gm_user: await room.gm_user.send(f"🎭 サフェル自滅 (狼模倣)")
+                    if room.gm_user: await room.gm_user.send(f"🎭 模倣者自滅 (狼模倣)")
                 elif src.role == ROLE_SIRENS: 
                     if dst: saphel_guard = dst.id
                 elif src.role in [ROLE_SWORDMASTER, ROLE_PHAINON]: 
                     if dst: saphel_attack = dst.id
                 elif src.role == ROLE_TRIBBIE:
                     if dst:
-                        res = "ライコス" if dst.is_wolf_side else "人間"
+                        res = "人狼" if dst.is_wolf_side else "人間"
                         try:
                             u = self.bot.get_user(saphel_actor.id)
                             await u.send(f"🎭 模倣占い結果: {dst.name} は **{res}** です。")
@@ -910,21 +907,21 @@ class WerewolfSystem(commands.Cog):
                         except: pass
                 elif src.role == ROLE_MORDIS:
                     saphel_actor.mordis_revive_available = True
-                    if room.gm_user: await room.gm_user.send("🎭 サフェル -> モーディス模倣 (耐久回復)")
+                    if room.gm_user: await room.gm_user.send("🎭 模倣者 -> 長老模倣 (耐久回復)")
                 elif src.role == ROLE_CERYDRA:
                     saphel_actor.vote_weight = 2
-                    if room.gm_user: await room.gm_user.send("🎭 サフェル -> ケリュドラ模倣 (明日2票)")
+                    if room.gm_user: await room.gm_user.send("🎭 模倣者 -> 富豪模倣 (明日2票)")
                 elif src.role == ROLE_CYRENE:
                     if saphel_actor.cyrene_buff_count > 0:
                         saphel_actor.cyrene_buff_count -= 1
                         saphel_actor.mimicking_cyrene = True
                         if dst: extra_buff_target = dst
-                        if room.gm_user: await room.gm_user.send("🎭 サフェル -> キュレネ模倣 (呪い&バフ)")
+                        if room.gm_user: await room.gm_user.send("🎭 模倣者 -> 聖女模倣 (呪い&バフ)")
                     else:
-                        if room.gm_user: await room.gm_user.send("🎭 サフェル -> キュレネ模倣失敗 (回数切れ)")
+                        if room.gm_user: await room.gm_user.send("🎭 模倣者 -> 聖女模倣失敗 (回数切れ)")
                 elif src.role == ROLE_HYANCI:
                     saphel_actor.hyanci_protection_active = True
-                    if room.gm_user: await room.gm_user.send("🎭 サフェル -> ヒアンシー模倣 (保護)")
+                    if room.gm_user: await room.gm_user.send("🎭 模倣者 -> 蝙蝠模倣 (保護)")
 
         steal = [room.night_actions.get("steal"), room.night_actions.get("steal_2nd")]
         guard = [room.night_actions.get("guard"), room.night_actions.get("guard_2nd")]
@@ -935,7 +932,6 @@ class WerewolfSystem(commands.Cog):
         if saphel_guard: guard.append(saphel_guard)
         if saphel_attack: slash.append(saphel_attack)
 
-        # サフェル(キュレネ模倣)によるバフ: ランダム追撃
         if extra_buff_target and extra_buff_target.is_alive:
             if extra_buff_target.role == ROLE_LYKOS:
                 others = [p.id for p in room.get_alive() if p.role != ROLE_LYKOS and p.id != steal[0]]
@@ -988,6 +984,174 @@ class WerewolfSystem(commands.Cog):
         else:
             await target_ch.send(f"議論を開始してください ({room.settings['discussion_time']}秒)")
 
+    async def start_vote_logic(self, room):
+        target_ch = room.main_ch if room.main_ch else room.lobby_channel
+        await target_ch.send("🗳️ **投票フェーズ** を開始します。(全員投票で即時開票)")
+        room.votes = {}
+        tasks = []
+        for p in room.get_alive():
+            view = VoteView(room, p, self)
+            tasks.append(self.bot.get_user(p.id).send("【投票】 追放する者を選んでください（1回のみ）", view=view))
+        if tasks: await asyncio.gather(*tasks)
+        else: await target_ch.send("（投票できる生存者がいません）")
+
+        wait_time = 0
+        while True:
+            await asyncio.sleep(1)
+            wait_time += 1
+            if wait_time > 180:
+                await target_ch.send("⏰ 時間切れ。強制開票します。")
+                break
+            if room.phase == "CANCELLED": return
+            if len(room.votes) >= len(room.get_alive()): break
+
+        await self.tally_votes_logic(room)
+
+    async def tally_votes_logic(self, room):
+        target_ch = room.main_ch if room.main_ch else room.lobby_channel
+        await target_ch.send("🗳️ **投票終了**。開票を行います...")
+        await asyncio.sleep(3)
+
+        room.prev_votes = room.votes.copy()
+
+        tally = {}
+        for voter_id, target in room.votes.items():
+            voter = room.players.get(voter_id)
+            weight = voter.vote_weight if voter else 1
+            tally[target] = tally.get(target, 0) + weight
+
+        if not tally:
+            await target_ch.send("投票がありませんでした。")
+            return
+
+        max_votes = max(tally.values())
+        candidates = [t for t, count in tally.items() if count == max_votes]
+
+        if "skip" in candidates or len(candidates) > 1:
+            reason = "スキップ多数" if "skip" in candidates else "同数票"
+            await target_ch.send(f"投票の結果、**{reason}** となりました。\n本日の処刑は見送られます。")
+        else:
+            final_target_id = candidates[0]
+            executed_player = room.players.get(final_target_id)
+            if executed_player:
+                is_dead = await self.kill_player_logic(room, executed_player)
+                if is_dead:
+                    room.last_executed = executed_player
+                    if executed_player.role == ROLE_CYRENE:
+                        room.cyrene_executed = True
+                        await target_ch.send(f"⚠️ 処刑された **{executed_player.name}** は... **{ROLE_CYRENE}** でした！！\n禁忌に触れたため、村人陣営は敗北となります。")
+                else:
+                    await target_ch.send(f"⚠️ **{executed_player.name}** は処刑台に上がりましたが、奇跡的に生還しました！")
+            else:
+                await target_ch.send("エラー: 対象が見つかりません。")
+        
+        if room.check_winner():
+            await self.end_game(room, room.check_winner())
+
+    @commands.command()
+    async def wroles(self, ctx):
+        embed = discord.Embed(title="📜 人狼ゲーム 役職一覧", color=0x3498db)
+        for role, data in ROLE_DATA.items():
+            embed.add_field(name=role, value=data["desc"], inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def walive(self, ctx):
+        found_room = None
+        for room in self.rooms.values():
+            if ctx.author.id in room.players:
+                found_room = room
+                break
+        if not found_room:
+            await ctx.send("現在進行中のゲームに参加していません。")
+            return
+        alive_list = [p.name for p in found_room.players.values() if p.is_alive]
+        dead_list = [p.name for p in found_room.players.values() if not p.is_alive]
+        embed = discord.Embed(title="📊 現在の状況", color=0x2ecc71)
+        embed.add_field(name=f"🟢 生存 ({len(alive_list)})", value="\n".join(alive_list) or "なし", inline=True)
+        embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def panel(self, ctx, code: str = None):
+        if code:
+            await self.join(ctx, code)
+            return
+
+        room_list = ""
+        if self.rooms:
+            for ch_id, room in self.rooms.items():
+                ch = self.bot.get_channel(ch_id)
+                ch_name = ch.name if ch else "不明"
+                mode = "手動" if room.settings["mode"] == "MANUAL" else "自動"
+                code_str = getattr(room, 'code', 'なし')
+                room_list += f"• **{ch_name}** (Code: {code_str}): {len(room.players)}人 ({mode})\n"
+        else: room_list = "なし"
+        embed = discord.Embed(title="🐺 人狼ゲーム ロビー", description=f"現在のルーム:\n{room_list}", color=0x8e44ad)
+        await ctx.send(embed=embed, view=Launcher(self))
+        try: await ctx.message.delete()
+        except: pass
+
+    @commands.command()
+    async def wclose(self, ctx):
+        room = self.get_room_from_context(ctx)
+        if room:
+            room.phase = "CANCELLED"
+            await ctx.send("💥 ルームを解散します...")
+            await self.cleanup_venue(room)
+            if room.lobby_channel.id in self.rooms: del self.rooms[room.lobby_channel.id]
+        else:
+            await ctx.send("ここにはルームがありません。")
+
+    async def check_gm(self, ctx):
+        room = self.get_room_from_context(ctx)
+        if not room: return None
+        if room.settings["mode"] != "MANUAL": return None
+        if room.gm_user and ctx.author.id != room.gm_user.id: return None
+        return room
+
+    @commands.command()
+    async def wstatus(self, ctx):
+        room = await self.check_gm(ctx)
+        if not room: return
+        await ctx.message.delete()
+        embed = discord.Embed(title="🕵️ GMステータス", color=0x2b2d31)
+        alive_txt = "\n".join([f"🟢 {p.name} ({p.role})" for p in room.players.values() if p.is_alive])
+        dead_txt = "\n".join([f"💀 {p.name} ({p.role})" for p in room.players.values() if not p.is_alive])
+        embed.add_field(name="生存", value=alive_txt or "なし")
+        if dead_txt: embed.add_field(name="死亡", value=dead_txt)
+        await ctx.author.send(embed=embed)
+
+    @commands.command()
+    async def wvote(self, ctx):
+        room = await self.check_gm(ctx)
+        if not room: return
+        await ctx.message.delete()
+        asyncio.create_task(self.start_vote_logic(room))
+
+    @commands.command()
+    async def wnight(self, ctx):
+        room = await self.check_gm(ctx)
+        if not room: return
+        await ctx.message.delete()
+        asyncio.create_task(self.start_night_logic(room))
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if message.author.bot: return
+        if self.bot.user in message.mentions:
+            room = self.get_room_from_context(message)
+            if room:
+                alive_list = [p.name for p in room.players.values() if p.is_alive]
+                dead_list = [p.name for p in room.players.values() if not p.is_alive]
+                embed = discord.Embed(title="📊 現在の戦況", color=0x2ecc71)
+                embed.add_field(name=f"🟢 生存 ({len(alive_list)})", value="\n".join(alive_list) or "なし", inline=True)
+                embed.add_field(name=f"💀 脱落 ({len(dead_list)})", value="\n".join(dead_list) or "なし", inline=True)
+                await message.channel.send(embed=embed)
+            else:
+                embed = discord.Embed(title="🐺 人狼ゲーム Bot", description="Bot Version 0.6.0", color=0x9b59b6)
+                await message.channel.send(embed=embed)
+
     # --- Main Loop Logic ---
     async def create_room_logic(self, itx_or_ctx):
         channel = None
@@ -995,7 +1159,6 @@ class WerewolfSystem(commands.Cog):
         if isinstance(itx_or_ctx, discord.Interaction):
             channel = itx_or_ctx.channel
             user = itx_or_ctx.user
-            # 応答待ち
             await itx_or_ctx.response.send_message("ロビー作成中...", ephemeral=True)
         else:
             channel = itx_or_ctx.channel
@@ -1003,31 +1166,25 @@ class WerewolfSystem(commands.Cog):
         
         if channel is None: return
 
-        if channel.id in self.rooms:
-            msg = "このチャンネルには既に部屋があります。"
-            if isinstance(itx_or_ctx, discord.Interaction):
-                await itx_or_ctx.followup.send(msg, ephemeral=True)
-            else:
-                await channel.send(msg)
-            return
-
+        # 新しい部屋を作成
         room = GameRoom(channel)
         room.gm_user = user
-        room.spectators = {}  # 見学者リスト
-        room.code = self.generate_room_code() # 部屋コード発行
-        self.rooms[channel.id] = room
+        room.spectators = {} 
+        room.code = self.generate_room_code()
+        
+        # Room IDは setup_venue でメインチャンネルIDで登録する
+        await self.setup_venue(room)
+        
+        if not room.main_ch: return
 
         # ★非同期タスクとしてゲームループを開始
-        asyncio.create_task(self.game_loop(channel, room))
+        asyncio.create_task(self.game_loop(room.main_ch, room))
 
     async def game_loop(self, channel, room):
-        # メッセージ管理変数をroomに持たせる
         room.lobby_msg = None
         
-        # パネル更新関数 (roomから呼び出せるようにする)
         async def update_panel():
             if not room.lobby_msg: return
-            
             s = room.settings
             if not room.custom_settings:
                 rec = room.get_recommended_settings(len(room.players))
@@ -1037,9 +1194,11 @@ class WerewolfSystem(commands.Cog):
                 s_display = s
                 note = "(カスタム)"
             m_txt = "手動" if s["mode"]=="MANUAL" else "全自動"
+            
+            # 役職表示更新
             role_str = (
-                f"🐺{s_display['lykos']} 狂{s_display['caeneus']} 🔮{s_display['tribbie']} 👻{s_display['castorice']} "
-                f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']} ❤️{s_display['cyrene']} 👮{s_display['phainon']} 🐲{s_display['cerydra']}\n"
+                f"🐺{s_display['lykos']} 👺{s_display['caeneus']} 🔮{s_display['tribbie']} 👻{s_display['castorice']} "
+                f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']} 🩸{s_display['cyrene']} 💰{s_display['cerydra']}\n"
                 f"🧐{s_display['aglaea']} 🎭{s_display['saphel']} 🦇{s_display['hyanci']}"
             )
             sys_str = f"閉鎖:{'ON' if s['auto_close'] else 'OFF'}, 続戦:{'ON' if s['rematch'] else 'OFF'}"
@@ -1054,66 +1213,61 @@ class WerewolfSystem(commands.Cog):
             embed.add_field(name=f"見学者 {len(room.spectators)}名", value=s_names or "なし")
             
             try:
-                # Viewを再生成して渡す
                 new_view = LobbyView(room, update_panel, self)
                 await room.lobby_msg.edit(embed=embed, view=new_view)
             except Exception as e:
                 print(f"Update panel error: {e}")
 
-        # コールバック登録
         room.update_panel_callback = update_panel
 
         try:
-            while True:
-                # 初回メッセージ送信
-                view = LobbyView(room, update_panel, self)
-                room.lobby_msg = await channel.send(embed=discord.Embed(title="待機中..."), view=view)
-                await update_panel()
+            view = LobbyView(room, update_panel, self)
+            room.lobby_msg = await channel.send(embed=discord.Embed(title="待機中..."), view=view)
+            await update_panel()
 
-                # 待機
-                while room.phase == "WAITING":
-                    await asyncio.sleep(1)
-                    if room.phase == "CANCELLED":
-                        await self.cleanup_venue(room)
-                        if channel.id in self.rooms: del self.rooms[channel.id]
-                        return
-                    if room.phase == "STARTING": break
-                
-                await self.setup_venue(room)
+            while room.phase == "WAITING":
+                await asyncio.sleep(1)
                 if room.phase == "CANCELLED":
                     await self.cleanup_venue(room)
-                    if channel.id in self.rooms: del self.rooms[channel.id]
+                    if room.main_ch and room.main_ch.id in self.rooms:
+                        del self.rooms[room.main_ch.id]
                     return
+                if room.phase == "STARTING": break
+            
+            # ゲーム開始前にもう一度会場設定を確認（権限付与など）
+            # setup_venueはcreate時に実行済みだが、再確認してもよい
+            
+            await self.run_game(room.main_ch.id)
 
-                # ★修正: 復活させた run_game メソッドを呼び出し
-                await self.run_game(room.main_ch.id)
+            if room.settings["auto_close"]:
+                await asyncio.sleep(60)
+                await self.cleanup_venue(room)
+            else:
+                await room.main_ch.send("🛑 自動閉鎖OFF: 終了するには `!wclose` してください。")
+                while room.phase == "FINISHED":
+                    await asyncio.sleep(2)
+                    if room.main_ch.id not in self.rooms: return 
 
-                if room.settings["auto_close"]:
-                    await asyncio.sleep(60)
-                    await self.cleanup_venue(room)
-                else:
-                    await room.main_ch.send("🛑 自動閉鎖OFF: 終了するには `!wclose` してください。")
-                    while room.phase == "FINISHED":
-                        await asyncio.sleep(2)
-                        if channel.id not in self.rooms: return 
-
-                if room.settings["rematch"] and channel.id in self.rooms:
-                    await self.cleanup_venue(room) 
-                    room.reset_for_rematch()
-                    await channel.send("🔁 続戦します。ロビーへ戻ります。")
-                else:
-                    break
+            if room.settings["rematch"] and room.main_ch.id in self.rooms:
+                await self.cleanup_venue(room) 
+                # リマッチ時は再度セットアップが必要だが、このループ構造だと
+                # cleanup_venueでチャンネルが消えるため、再度 create_room_logic 的なフローが必要になる。
+                # 簡易的にメッセージを出して終了とする（完全なリマッチは構造変更が必要）
+                if room.lobby_channel:
+                    await room.lobby_channel.send(f"🔁 部屋 `{room.code}` は終了しました。再戦する場合は再度作成してください。")
+            else:
+                pass 
 
         except Exception as e:
-            await channel.send(f"⚠️ エラー発生: {e}")
+            print(f"Game Loop Error: {e}")
             traceback.print_exc()
         finally:
-            if channel.id in self.rooms:
-                r = self.rooms[channel.id]
+            if room.main_ch and room.main_ch.id in self.rooms:
+                r = self.rooms[room.main_ch.id]
                 await self.cleanup_venue(r)
-                del self.rooms[channel.id]
+                del self.rooms[room.main_ch.id]
 
-    # ★追加: 復活させた run_game メソッド
+    # ... (run_game メソッドは以前と同じものを維持) ...
     async def run_game(self, channel_id):
         room = self.rooms[channel_id]
         room.assign_roles()
@@ -1175,10 +1329,49 @@ class WerewolfSystem(commands.Cog):
                 await self.end_game(room, room.check_winner())
                 break
 
+    async def end_game(self, room, winner):
+        target_ch = room.main_ch if room.main_ch else room.lobby_channel
+        embed = discord.Embed(title="決着", description=f"勝者: **{winner}**", color=0xf1c40f)
+        det = ""
+        for p in room.players.values(): det += f"{p.name}: {p.role} ({'生' if p.is_alive else '死'})\n"
+        embed.add_field(name="内訳", value=det)
+        await target_ch.send(embed=embed)
+        
+        # ゲーム終了後、全員（生存・死者・見学）が発言可能に
+        if room.main_ch and room.grave_ch:
+            all_users = [p.member for p in room.players.values()]
+            if hasattr(room, 'spectators'):
+                all_users.extend(room.spectators.values())
+            
+            for u in all_users:
+                try:
+                    await room.main_ch.set_permissions(u, read_messages=True, send_messages=True)
+                    await room.grave_ch.set_permissions(u, read_messages=True, send_messages=True)
+                except: pass
+        
+        close_msg = "60秒後に閉鎖" if room.settings["auto_close"] else "自動閉鎖OFF"
+        rematch_msg = "続戦あり" if room.settings["rematch"] else "完全終了"
+        await target_ch.send(f"ゲーム終了。({close_msg} / {rematch_msg})")
+        
+        room.phase = "FINISHED"
+
     # ★修正: !create コマンドを追加
     @commands.command()
     async def create(self, ctx):
         await self.create_room_logic(ctx)
+
+    # ★修正: !wclose コマンドを追加 (復活)
+    @commands.command()
+    async def wclose(self, ctx):
+        room = self.get_room_from_context(ctx)
+        if room:
+            room.phase = "CANCELLED"
+            await ctx.send("💥 ルームを解散します...")
+            await self.cleanup_venue(room)
+            if room.main_ch and room.main_ch.id in self.rooms:
+                del self.rooms[room.main_ch.id]
+        else:
+            await ctx.send("ここにはルームがありません。")
 
     # ★追加: !join コマンドを追加
     @commands.command()
@@ -1194,46 +1387,23 @@ class WerewolfSystem(commands.Cog):
                 break
         
         if target_room:
-            # 既にプレイヤーなら何もしない
             if ctx.author.id in target_room.players:
                 await ctx.send("既にプレイヤーとして参加しています。")
                 return
 
-            # 見学からは外す
             if hasattr(target_room, 'spectators') and ctx.author.id in target_room.spectators:
                 del target_room.spectators[ctx.author.id]
 
             target_room.join(ctx.author)
             await ctx.send(f"✅ 部屋 `{code}` に参加しました！")
             
-            # ★修正: パネル更新を実行
+            if target_room.main_ch:
+                await target_room.main_ch.set_permissions(ctx.author, read_messages=True, send_messages=True)
+
             if hasattr(target_room, 'update_panel_callback'):
                 await target_room.update_panel_callback()
-                
         else:
             await ctx.send(f"部屋コード `{code}` が見つかりません。")
-
-    # ★修正: パネルコマンドで参加も可能に
-    @commands.command()
-    async def panel(self, ctx, code: str = None):
-        # もしコード指定があれば参加処理へ
-        if code:
-            await self.join(ctx, code)
-            return
-
-        room_list = ""
-        if self.rooms:
-            for ch_id, room in self.rooms.items():
-                ch = self.bot.get_channel(ch_id)
-                ch_name = ch.name if ch else "不明"
-                mode = "手動" if room.settings["mode"] == "MANUAL" else "自動"
-                code_str = getattr(room, 'code', 'なし')
-                room_list += f"• **{ch_name}** (Code: {code_str}): {len(room.players)}人 ({mode})\n"
-        else: room_list = "なし"
-        embed = discord.Embed(title="⚔️ オンパロス戦線 ロビー", description=f"現在のルーム:\n{room_list}", color=0x8e44ad)
-        await ctx.send(embed=embed, view=Launcher(self))
-        try: await ctx.message.delete()
-        except: pass
 
 async def setup(bot):
     await bot.add_cog(WerewolfSystem(bot))
