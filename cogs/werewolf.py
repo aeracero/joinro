@@ -573,7 +573,11 @@ class WerewolfSystem(commands.Cog):
             # 部屋IDを新しいメインチャンネルIDで登録し直す
             self.rooms[room.main_ch.id] = room
             
-            await room.main_ch.send(f"会場を作成しました。部屋コード: `{room.code}`")
+            # ★修正: 参加者全員へのメンションを追加
+            mentions = [p.member.mention for p in room.players.values()]
+            mention_str = " ".join(mentions) if mentions else ""
+            
+            await room.main_ch.send(f"{mention_str}\n会場を作成しました。部屋コード: `{room.code}`\nこれよりゲームを開始します！")
 
         except Exception as e:
             await room.lobby_channel.send(f"⚠️ 会場作成エラー: {e}")
@@ -984,130 +988,6 @@ class WerewolfSystem(commands.Cog):
         else:
             await target_ch.send(f"議論を開始してください ({room.settings['discussion_time']}秒)")
 
-    async def start_vote_logic(self, room):
-        target_ch = room.main_ch if room.main_ch else room.lobby_channel
-        await target_ch.send("🗳️ **投票フェーズ** を開始します。(全員投票で即時開票)")
-        room.votes = {}
-        tasks = []
-        for p in room.get_alive():
-            view = VoteView(room, p, self)
-            tasks.append(self.bot.get_user(p.id).send("【投票】 追放する者を選んでください（1回のみ）", view=view))
-        if tasks: await asyncio.gather(*tasks)
-        else: await target_ch.send("（投票できる生存者がいません）")
-
-        wait_time = 0
-        while True:
-            await asyncio.sleep(1)
-            wait_time += 1
-            if wait_time > 180:
-                await target_ch.send("⏰ 時間切れ。強制開票します。")
-                break
-            if room.phase == "CANCELLED": return
-            if len(room.votes) >= len(room.get_alive()): break
-
-        await self.tally_votes_logic(room)
-
-    async def tally_votes_logic(self, room):
-        target_ch = room.main_ch if room.main_ch else room.lobby_channel
-        await target_ch.send("🗳️ **投票終了**。開票を行います...")
-        await asyncio.sleep(3)
-
-        room.prev_votes = room.votes.copy()
-
-        tally = {}
-        for voter_id, target in room.votes.items():
-            voter = room.players.get(voter_id)
-            weight = voter.vote_weight if voter else 1
-            tally[target] = tally.get(target, 0) + weight
-
-        if not tally:
-            await target_ch.send("投票がありませんでした。")
-            return
-
-        max_votes = max(tally.values())
-        candidates = [t for t, count in tally.items() if count == max_votes]
-
-        if "skip" in candidates or len(candidates) > 1:
-            reason = "スキップ多数" if "skip" in candidates else "同数票"
-            await target_ch.send(f"投票の結果、**{reason}** となりました。\n本日の処刑は見送られます。")
-        else:
-            final_target_id = candidates[0]
-            executed_player = room.players.get(final_target_id)
-            if executed_player:
-                is_dead = await self.kill_player_logic(room, executed_player)
-                if is_dead:
-                    room.last_executed = executed_player
-                    if executed_player.role == ROLE_CYRENE:
-                        room.cyrene_executed = True
-                        await target_ch.send(f"⚠️ 処刑された **{executed_player.name}** は... **{ROLE_CYRENE}** でした！！\n禁忌に触れたため、オンパロス陣営は敗北となります。")
-                else:
-                    await target_ch.send(f"⚠️ **{executed_player.name}** は処刑台に上がりましたが、奇跡的に生還しました！")
-            else:
-                await target_ch.send("エラー: 対象が見つかりません。")
-        
-        if room.check_winner():
-            await self.end_game(room, room.check_winner())
-
-    # ★修正: !create コマンドを追加
-    @commands.command()
-    async def create(self, ctx):
-        await self.create_room_logic(ctx)
-
-    # ★追加: !join コマンドを追加
-    @commands.command()
-    async def join(self, ctx, code: str = None):
-        if not code:
-            await ctx.send("部屋コードを指定してください。例: `!join 1234`")
-            return
-        
-        target_room = None
-        for room in self.rooms.values():
-            if getattr(room, 'code', '') == code:
-                target_room = room
-                break
-        
-        if target_room:
-            # 既にプレイヤーなら何もしない
-            if ctx.author.id in target_room.players:
-                await ctx.send("既にプレイヤーとして参加しています。")
-                return
-
-            # 見学からは外す
-            if hasattr(target_room, 'spectators') and ctx.author.id in target_room.spectators:
-                del target_room.spectators[ctx.author.id]
-
-            target_room.join(ctx.author)
-            await ctx.send(f"✅ 部屋 `{code}` に参加しました！")
-            
-            # ★修正: パネル更新を実行
-            if hasattr(target_room, 'update_panel_callback'):
-                await target_room.update_panel_callback()
-                
-        else:
-            await ctx.send(f"部屋コード `{code}` が見つかりません。")
-
-    # ★修正: パネルコマンドで参加も可能に
-    @commands.command()
-    async def panel(self, ctx, code: str = None):
-        # もしコード指定があれば参加処理へ
-        if code:
-            await self.join(ctx, code)
-            return
-
-        room_list = ""
-        if self.rooms:
-            for ch_id, room in self.rooms.items():
-                ch = self.bot.get_channel(ch_id)
-                ch_name = ch.name if ch else "不明"
-                mode = "手動" if room.settings["mode"] == "MANUAL" else "自動"
-                code_str = getattr(room, 'code', 'なし')
-                room_list += f"• **{ch_name}** (Code: {code_str}): {len(room.players)}人 ({mode})\n"
-        else: room_list = "なし"
-        embed = discord.Embed(title="⚔️ オンパロス戦線 ロビー", description=f"現在のルーム:\n{room_list}", color=0x8e44ad)
-        await ctx.send(embed=embed, view=Launcher(self))
-        try: await ctx.message.delete()
-        except: pass
-
     # --- Main Loop Logic ---
     async def create_room_logic(self, itx_or_ctx):
         channel = None
@@ -1194,6 +1074,7 @@ class WerewolfSystem(commands.Cog):
                 while room.phase == "WAITING":
                     await asyncio.sleep(1)
                     if room.phase == "CANCELLED":
+                        await self.cleanup_venue(room)
                         if channel.id in self.rooms: del self.rooms[channel.id]
                         return
                     if room.phase == "STARTING": break
@@ -1293,6 +1174,66 @@ class WerewolfSystem(commands.Cog):
             if room.check_winner(): 
                 await self.end_game(room, room.check_winner())
                 break
+
+    # ★修正: !create コマンドを追加
+    @commands.command()
+    async def create(self, ctx):
+        await self.create_room_logic(ctx)
+
+    # ★追加: !join コマンドを追加
+    @commands.command()
+    async def join(self, ctx, code: str = None):
+        if not code:
+            await ctx.send("部屋コードを指定してください。例: `!join 1234`")
+            return
+        
+        target_room = None
+        for room in self.rooms.values():
+            if getattr(room, 'code', '') == code:
+                target_room = room
+                break
+        
+        if target_room:
+            # 既にプレイヤーなら何もしない
+            if ctx.author.id in target_room.players:
+                await ctx.send("既にプレイヤーとして参加しています。")
+                return
+
+            # 見学からは外す
+            if hasattr(target_room, 'spectators') and ctx.author.id in target_room.spectators:
+                del target_room.spectators[ctx.author.id]
+
+            target_room.join(ctx.author)
+            await ctx.send(f"✅ 部屋 `{code}` に参加しました！")
+            
+            # ★修正: パネル更新を実行
+            if hasattr(target_room, 'update_panel_callback'):
+                await target_room.update_panel_callback()
+                
+        else:
+            await ctx.send(f"部屋コード `{code}` が見つかりません。")
+
+    # ★修正: パネルコマンドで参加も可能に
+    @commands.command()
+    async def panel(self, ctx, code: str = None):
+        # もしコード指定があれば参加処理へ
+        if code:
+            await self.join(ctx, code)
+            return
+
+        room_list = ""
+        if self.rooms:
+            for ch_id, room in self.rooms.items():
+                ch = self.bot.get_channel(ch_id)
+                ch_name = ch.name if ch else "不明"
+                mode = "手動" if room.settings["mode"] == "MANUAL" else "自動"
+                code_str = getattr(room, 'code', 'なし')
+                room_list += f"• **{ch_name}** (Code: {code_str}): {len(room.players)}人 ({mode})\n"
+        else: room_list = "なし"
+        embed = discord.Embed(title="⚔️ オンパロス戦線 ロビー", description=f"現在のルーム:\n{room_list}", color=0x8e44ad)
+        await ctx.send(embed=embed, view=Launcher(self))
+        try: await ctx.message.delete()
+        except: pass
 
 async def setup(bot):
     await bot.add_cog(WerewolfSystem(bot))
