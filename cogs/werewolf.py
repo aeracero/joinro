@@ -77,7 +77,7 @@ class JoinSelectionView(ui.View):
         else:
             await interaction.response.send_message("参加していません。", ephemeral=True)
 
-# --- Lobby View (New) ---
+# --- Lobby View ---
 class LobbyView(ui.View):
     def __init__(self, room, update_callback, bot_system):
         super().__init__(timeout=None)
@@ -91,14 +91,12 @@ class LobbyView(ui.View):
 
     @ui.button(label="設定", style=discord.ButtonStyle.secondary)
     async def setting(self, itx: discord.Interaction, btn: ui.Button):
-        # 設定メニューを開く
         self.room.gm_user = itx.user
         await itx.response.send_message("設定メニュー:", view=SettingsMenuView(self.room, self.update_callback), ephemeral=True)
 
     @ui.button(label="💥 解散", style=discord.ButtonStyle.secondary)
     async def cancel(self, itx: discord.Interaction, btn: ui.Button):
         self.room.phase = "CANCELLED"
-        # メッセージの更新はループ側で行われるか、ここで行う
         await itx.response.send_message("部屋を解散します...", ephemeral=True)
         self.stop()
 
@@ -109,7 +107,7 @@ class LobbyView(ui.View):
         if len(self.room.players) < 2:
             await itx.response.send_message("人数不足です（最低2名）。", ephemeral=True)
             return
-        await itx.response.send_message("会場設営中...", ephemeral=True)
+        await itx.response.send_message("🚀 ゲームを開始します！")
         self.stop()
         self.room.phase = "STARTING"
 
@@ -270,12 +268,12 @@ class RoleSettingsBasicModal(ui.Modal, title="配役設定: 基本"):
         self.room = room
         self.callback = callback
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
-
-        self.add_item(ui.TextInput(label="🐺 神礼の観衆 (人狼)", default=str(s.get('lykos', 0))))
-        self.add_item(ui.TextInput(label="👺 カスニス (狂人)", default=str(s.get('caeneus', 0))))
-        self.add_item(ui.TextInput(label="🔮 門と道 (占い)", default=str(s.get('tribbie', 0))))
-        self.add_item(ui.TextInput(label="🛡️ 海洋 (騎士)", default=str(s.get('sirens', 0))))
-        self.add_item(ui.TextInput(label="👻 死と生 (霊媒)", default=str(s.get('castorice', 0))))
+        
+        self.add_item(ui.TextInput(label=f"🐺 {ROLE_LYKOS} (人狼)", default=str(s.get('lykos', 0))))
+        self.add_item(ui.TextInput(label=f"👺 {ROLE_CAENEUS} (狂人)", default=str(s.get('caeneus', 0))))
+        self.add_item(ui.TextInput(label=f"🔮 {ROLE_TRIBBIE} (占い)", default=str(s.get('tribbie', 0))))
+        self.add_item(ui.TextInput(label=f"🛡️ {ROLE_SIRENS} (騎士)", default=str(s.get('sirens', 0))))
+        self.add_item(ui.TextInput(label=f"👻 {ROLE_CASTORICE} (霊媒)", default=str(s.get('castorice', 0))))
 
     async def on_submit(self, itx):
         try:
@@ -296,11 +294,11 @@ class RoleSettingsAdvancedModal(ui.Modal, title="配役設定: 攻撃・特殊")
         self.callback = callback
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
         
-        self.add_item(ui.TextInput(label="⚔️ 黒衣の剣士 (辻斬り)", default=str(s.get('swordmaster', 0))))
-        self.add_item(ui.TextInput(label="🔪 世負い (暗殺)", default=str(s.get('phainon', 0))))
-        self.add_item(ui.TextInput(label="💀 紛争 (耐久)", default=str(s.get('mordis', 0))))
-        self.add_item(ui.TextInput(label="💣 真我 (自爆)", default=str(s.get('cyrene', 0))))
-        self.add_item(ui.TextInput(label="🐲 法 (権力)", default=str(s.get('cerydra', 0))))
+        self.add_item(ui.TextInput(label=f"⚔️ {ROLE_SWORDMASTER} (辻斬り)", default=str(s.get('swordmaster', 0))))
+        self.add_item(ui.TextInput(label=f"🔪 {ROLE_PHAINON} (暗殺)", default=str(s.get('phainon', 0))))
+        self.add_item(ui.TextInput(label=f"💀 {ROLE_MORDIS} (耐久)", default=str(s.get('mordis', 0))))
+        self.add_item(ui.TextInput(label=f"💣 {ROLE_CYRENE} (自爆)", default=str(s.get('cyrene', 0))))
+        self.add_item(ui.TextInput(label=f"🐲 {ROLE_CERYDRA} (権力)", default=str(s.get('cerydra', 0))))
 
     async def on_submit(self, itx):
         try:
@@ -321,9 +319,9 @@ class RoleSettingsExtraModal(ui.Modal, title="配役設定: その他"):
         self.callback = callback
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
         
-        self.add_item(ui.TextInput(label="🧐 浪漫 (調査)", default=str(s.get('aglaea', 0))))
-        self.add_item(ui.TextInput(label="🎭 詭術 (模倣)", default=str(s.get('saphel', 0))))
-        self.add_item(ui.TextInput(label="🦇 天空 (蝙蝠)", default=str(s.get('hyanci', 0))))
+        self.add_item(ui.TextInput(label=f"🧐 {ROLE_AGLAEA} (調査)", default=str(s.get('aglaea', 0))))
+        self.add_item(ui.TextInput(label=f"🎭 {ROLE_SAPHEL} (模倣)", default=str(s.get('saphel', 0))))
+        self.add_item(ui.TextInput(label=f"🦇 {ROLE_HYANCI} (蝙蝠)", default=str(s.get('hyanci', 0))))
 
     async def on_submit(self, itx):
         try:
@@ -544,6 +542,9 @@ class WerewolfSystem(commands.Cog):
                 return code
 
     async def setup_venue(self, room):
+        # 既に作成済みならスキップ
+        if room.main_ch: return
+
         guild = room.lobby_channel.guild
         cat_ov = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -553,15 +554,15 @@ class WerewolfSystem(commands.Cog):
             cat_ov[room.gm_user] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
         try:
-            cat_name = f"⚔️ オンパロス戦線-{random.randint(100,999)}"
+            cat_name = f"⚔️ オンパロス戦線-{room.code}"
             room.category = await guild.create_category(cat_name, overwrites=cat_ov)
             
             main_ov = cat_ov.copy()
             grave_ov = cat_ov.copy()
             
+            # 初期権限設定 (プレイヤーはメインOK、見学者はメイン閲覧のみ)
             for p in room.players.values():
                 main_ov[p.member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-            
             for s in getattr(room, 'spectators', {}).values():
                 main_ov[s] = discord.PermissionOverwrite(read_messages=True, send_messages=False)
                 grave_ov[s] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
@@ -569,8 +570,11 @@ class WerewolfSystem(commands.Cog):
             room.main_ch = await room.category.create_text_channel("🌞議論-day", overwrites=main_ov)
             room.grave_ch = await room.category.create_text_channel("🪦墓場-graveyard", overwrites=grave_ov)
             
-            spec_count = len(getattr(room, 'spectators', {}))
-            await room.main_ch.send(f"{len(room.players)}名の英雄たちよ、ここが戦場だ。\n火種を奪われた者はここでの発言権を失い、墓場へ送られる。\n(見学者: {spec_count}名)")
+            # 部屋IDを新しいメインチャンネルIDで登録し直す
+            self.rooms[room.main_ch.id] = room
+            
+            await room.main_ch.send(f"会場を作成しました。部屋コード: `{room.code}`")
+
         except Exception as e:
             await room.lobby_channel.send(f"⚠️ 会場作成エラー: {e}")
             room.phase = "CANCELLED"
@@ -1200,7 +1204,8 @@ class WerewolfSystem(commands.Cog):
                     if channel.id in self.rooms: del self.rooms[channel.id]
                     return
 
-                await self.run_game(channel.id)
+                # ★修正: 復活させた run_game メソッドを呼び出し
+                await self.run_game(room.main_ch.id)
 
                 if room.settings["auto_close"]:
                     await asyncio.sleep(60)
@@ -1226,6 +1231,68 @@ class WerewolfSystem(commands.Cog):
                 r = self.rooms[channel.id]
                 await self.cleanup_venue(r)
                 del self.rooms[channel.id]
+
+    # ★追加: 復活させた run_game メソッド
+    async def run_game(self, channel_id):
+        room = self.rooms[channel_id]
+        room.assign_roles()
+        target_ch = room.main_ch if room.main_ch else room.lobby_channel
+
+        # 役職DM送信
+        for p in room.players.values():
+            u = self.bot.get_user(p.id)
+            if u:
+                data = ROLE_DATA.get(p.role, {"desc": "詳細不明", "has_ability": False})
+                embed = discord.Embed(title=f"あなたの役職: {p.role}", color=0x2ecc71)
+                embed.description = data["desc"]
+                if data["has_ability"]:
+                    embed.add_field(name="能力", value="✅ **使用可能**", inline=False)
+                else:
+                    embed.add_field(name="能力", value="❌ **能動的な能力なし**", inline=False)
+                if p.role == ROLE_LYKOS:
+                    mates = [x.name for x in room.players.values() if x.role == ROLE_LYKOS and x.id != p.id]
+                    embed.add_field(name="仲間の人狼", value=", ".join(mates) if mates else "なし", inline=False)
+                try: await u.send(embed=embed)
+                except: pass
+
+        # 手動モード
+        if room.settings["mode"] == "MANUAL":
+            await target_ch.send(
+                f"👤 **手動GMモード**\nGM: {room.gm_user.mention}\n下のパネルで操作してください。",
+                view=GMControlView(room, self)
+            )
+            spoiler = "【役職一覧】\n" + "\n".join([f"{p.name}: {p.role}" for p in room.players.values()])
+            try: await room.gm_user.send(spoiler)
+            except: pass
+            
+            while True:
+                await asyncio.sleep(2)
+                if room.phase == "CANCELLED": return
+                if room.phase == "FINISHED": return
+            return
+
+        # 自動モードループ
+        await target_ch.send("全自動モード開始。")
+        while True:
+            if room.phase == "CANCELLED": break
+            
+            # 朝（議論）
+            await target_ch.send(f"議論 {room.settings['discussion_time']}秒")
+            await asyncio.sleep(room.settings['discussion_time'])
+
+            # 投票
+            await self.start_vote_logic(room)
+            if room.phase == "FINISHED": break
+            if room.check_winner(): 
+                await self.end_game(room, room.check_winner())
+                break
+            
+            # 夜アクション
+            await self.start_night_logic(room)
+            if room.phase == "FINISHED": break
+            if room.check_winner(): 
+                await self.end_game(room, room.check_winner())
+                break
 
 async def setup(bot):
     await bot.add_cog(WerewolfSystem(bot))
