@@ -573,6 +573,7 @@ class WerewolfSystem(commands.Cog):
             # 部屋IDを新しいメインチャンネルIDで登録し直す
             self.rooms[room.main_ch.id] = room
             
+            # 参加者全員へのメンションを追加
             mentions = [p.member.mention for p in room.players.values()]
             mention_str = " ".join(mentions) if mentions else ""
             
@@ -686,7 +687,9 @@ class WerewolfSystem(commands.Cog):
                     await itx.response.edit_message(content="🎭 スキップしました。", view=None)
                     pending_actors.discard(player.id)
                 elif isinstance(val, int):
+                    # target is already set above
                     if not target: return
+                    
                     room.night_actions["mimic_src"] = val
                     action_map = {
                         ROLE_TRIBBIE: f"🔮 模倣: 誰を占いますか？",
@@ -932,6 +935,7 @@ class WerewolfSystem(commands.Cog):
         if saphel_guard: guard.append(saphel_guard)
         if saphel_attack: slash.append(saphel_attack)
 
+        # サフェル(キュレネ模倣)によるバフ: ランダム追撃
         if extra_buff_target and extra_buff_target.is_alive:
             if extra_buff_target.role == ROLE_LYKOS:
                 others = [p.id for p in room.get_alive() if p.role != ROLE_LYKOS and p.id != steal[0]]
@@ -1136,6 +1140,40 @@ class WerewolfSystem(commands.Cog):
         await ctx.message.delete()
         asyncio.create_task(self.start_night_logic(room))
 
+    # ★修正: !changelog コマンドの追加
+    @commands.command()
+    async def changelog(self, ctx):
+        embed = discord.Embed(title="📜 更新履歴 (Changelog)", color=0x9b59b6)
+        
+        embed.add_field(
+            name="v0.6.0 (Current)",
+            value="• 🆕 **多人数部屋作成**: ロビーから複数のゲーム部屋を並行して作成可能に\n"
+                  "• 🔑 **部屋コード**: 部屋番号での参加 (`!join [code]`) とパネル表示\n"
+                  "• 👁️ **観戦モード**: ゲームに参加せずチャットを見学する機能を追加\n"
+                  "• 📜 **更新履歴**: `!changelog` コマンドの実装",
+            inline=False
+        )
+        embed.add_field(
+            name="v0.5.0",
+            value="• 🛠️ **進行修正**: 自動モードの開始を「朝（議論）」からに変更\n"
+                  "• 🐛 **バグ修正**: 役職能力のエラーを修正",
+            inline=False
+        )
+        embed.add_field(
+            name="v0.4.0",
+            value="• ⚙️ **設定機能**: ゲーム設定（議論時間、閉鎖設定など）と配役設定を分離\n"
+                  "• 🚪 **キック機能**: 参加者を強制退出させる機能を追加",
+            inline=False
+        )
+        embed.add_field(
+            name="v0.3.0",
+            value="• ✨ **役職調整**: 聖女(旧キュレネ)のバフ回数などを調整\n"
+                  "• 🐛 **安定性向上**: 非同期処理のエラーハンドリングを強化",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot: return
@@ -1198,7 +1236,7 @@ class WerewolfSystem(commands.Cog):
             # 役職表示更新
             role_str = (
                 f"🐺{s_display['lykos']} 👺{s_display['caeneus']} 🔮{s_display['tribbie']} 👻{s_display['castorice']} "
-                f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']} 🩸{s_display['cyrene']} 💰{s_display['cerydra']}\n"
+                f"🛡️{s_display['sirens']} ⚔️{s_display['swordmaster']} 💀{s_display['mordis']} ❤️{s_display['cyrene']} 💰{s_display['cerydra']}\n"
                 f"🧐{s_display['aglaea']} 🎭{s_display['saphel']} 🦇{s_display['hyanci']}"
             )
             sys_str = f"閉鎖:{'ON' if s['auto_close'] else 'OFF'}, 続戦:{'ON' if s['rematch'] else 'OFF'}"

@@ -1,7 +1,7 @@
 import discord
 import random
 
-# --- 役職定義 (一般的な人狼用語へ変更) ---
+# --- 役職定義 (一般的な人狼用語) ---
 ROLE_CITIZEN = "市民"
 ROLE_LYKOS = "人狼"
 ROLE_CAENEUS = "狂人"
@@ -11,24 +11,24 @@ ROLE_SIRENS = "騎士"
 ROLE_PHAINON = "暗殺者"
 ROLE_SWORDMASTER = "辻斬り"
 ROLE_MORDIS = "長老"
-ROLE_CYRENE = "聖女"
-ROLE_CERYDRA = "富豪"
-ROLE_AGLAEA = "探偵"
-ROLE_SAPHEL = "模倣者"
-ROLE_HYANCI = "蝙蝠"
+ROLE_CYRENE = "聖女"      # 死ぬと村全滅
+ROLE_CERYDRA = "富豪"      # 2票持ち
+ROLE_AGLAEA = "探偵"      # 投票先調査
+ROLE_SAPHEL = "模倣者"    # 能力コピー
+ROLE_HYANCI = "蝙蝠"      # 第3陣営、生存勝利
 
 ROLE_DATA = {
-    ROLE_CITIZEN: {"desc": "能力なし。推理で戦う市民。", "has_ability": False},
-    ROLE_LYKOS: {"desc": "夜に襲撃可能。", "has_ability": True},
-    ROLE_CAENEUS: {"desc": "人狼の勝利が目的。", "has_ability": False},
-    ROLE_TRIBBIE: {"desc": "夜に一人を占い、人狼か否かを知る。", "has_ability": True},
+    ROLE_CITIZEN: {"desc": "能力なし。推理と投票で戦う。", "has_ability": False},
+    ROLE_LYKOS: {"desc": "夜に襲撃可能。市民を減らすのが目的。", "has_ability": True},
+    ROLE_CAENEUS: {"desc": "人狼の勝利が目的。能力はない。", "has_ability": False},
+    ROLE_TRIBBIE: {"desc": "毎晩一人を占い、人狼か否かを知る。", "has_ability": True},
     ROLE_CASTORICE: {"desc": "昨日の処刑者の正体(人狼か否か)を知る。", "has_ability": False},
-    ROLE_SIRENS: {"desc": "夜に一人を護衛可能(自分OK、連続NG)。", "has_ability": True},
+    ROLE_SIRENS: {"desc": "毎晩一人を護衛可能(自分OK、連続NG)。", "has_ability": True},
     ROLE_PHAINON: {"desc": "夜に一人を暗殺可能。ただし相手が人狼以外だと自爆する。", "has_ability": True},
     ROLE_SWORDMASTER: {"desc": "第3陣営。毎晩一人を襲撃可能。最後まで生存すれば勝利。", "has_ability": True},
-    ROLE_MORDIS: {"desc": "人狼の襲撃を1回耐える。", "has_ability": False},
+    ROLE_MORDIS: {"desc": "人狼の襲撃を1回耐えることができる。", "has_ability": False},
     ROLE_CYRENE: {"desc": "死亡すると村人陣営が敗北する(全滅)。自衛1回/バフ2回。", "has_ability": True},
-    ROLE_CERYDRA: {"desc": "投票時の票数が2票分になる。", "has_ability": False},
+    ROLE_CERYDRA: {"desc": "投票時の票数が常に2票分になる。", "has_ability": False},
     ROLE_AGLAEA: {"desc": "昨日の投票先を一人調査できる。", "has_ability": True},
     ROLE_SAPHEL: {"desc": "他者の能力を模倣して使用する(人狼を模倣すると死亡)。", "has_ability": True},
     ROLE_HYANCI: {"desc": "第3陣営。生存すれば勝利。供物を捧げて50%で死を回避。", "has_ability": True}
@@ -48,15 +48,15 @@ class Player:
         self.is_alive = True
         self.mordis_revive_available = False
         
-        # 聖女(キュレネ)用
+        # 聖女(旧キュレネ)用
         self.cyrene_guard_count = 1
         self.cyrene_buff_count = 2
         
-        # 蝙蝠(ヒアンシー)用
+        # 蝙蝠(旧ヒアンシー)用
         self.hyanci_ikarun_count = 2
         self.hyanci_protection_active = False
         
-        # 模倣者(サフェル)用
+        # 模倣者(旧サフェル)用
         self.mimicking_cyrene = False 
         
         self.last_guarded_id = None
