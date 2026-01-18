@@ -270,12 +270,12 @@ class RoleSettingsBasicModal(ui.Modal, title="配役設定: 基本"):
         self.room = room
         self.callback = callback
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
-        
-        self.add_item(ui.TextInput(label="🐺 ライコス (人狼)", default=str(s.get('lykos', 0))))
-        self.add_item(ui.TextInput(label="👺 カイニス (狂人)", default=str(s.get('caeneus', 0))))
-        self.add_item(ui.TextInput(label="🔮 トリビー (占い)", default=str(s.get('tribbie', 0))))
-        self.add_item(ui.TextInput(label="🛡️ セイレンス (騎士)", default=str(s.get('sirens', 0))))
-        self.add_item(ui.TextInput(label="👻 キャストリス (霊媒)", default=str(s.get('castorice', 0))))
+
+        self.add_item(ui.TextInput(label="🐺 神礼の観衆 (人狼)", default=str(s.get('lykos', 0))))
+        self.add_item(ui.TextInput(label="👺 カスニス (狂人)", default=str(s.get('caeneus', 0))))
+        self.add_item(ui.TextInput(label="🔮 門と道 (占い)", default=str(s.get('tribbie', 0))))
+        self.add_item(ui.TextInput(label="🛡️ 海洋 (騎士)", default=str(s.get('sirens', 0))))
+        self.add_item(ui.TextInput(label="👻 死と生 (霊媒)", default=str(s.get('castorice', 0))))
 
     async def on_submit(self, itx):
         try:
@@ -297,10 +297,10 @@ class RoleSettingsAdvancedModal(ui.Modal, title="配役設定: 攻撃・特殊")
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
         
         self.add_item(ui.TextInput(label="⚔️ 黒衣の剣士 (辻斬り)", default=str(s.get('swordmaster', 0))))
-        self.add_item(ui.TextInput(label="🔪 ファイノン (暗殺)", default=str(s.get('phainon', 0))))
-        self.add_item(ui.TextInput(label="💀 モーディス (耐久)", default=str(s.get('mordis', 0))))
-        self.add_item(ui.TextInput(label="💣 キュレネ (自爆)", default=str(s.get('cyrene', 0))))
-        self.add_item(ui.TextInput(label="🐲 ケリュドラ (権力)", default=str(s.get('cerydra', 0))))
+        self.add_item(ui.TextInput(label="🔪 世負い (暗殺)", default=str(s.get('phainon', 0))))
+        self.add_item(ui.TextInput(label="💀 紛争 (耐久)", default=str(s.get('mordis', 0))))
+        self.add_item(ui.TextInput(label="💣 真我 (自爆)", default=str(s.get('cyrene', 0))))
+        self.add_item(ui.TextInput(label="🐲 法 (権力)", default=str(s.get('cerydra', 0))))
 
     async def on_submit(self, itx):
         try:
@@ -321,9 +321,9 @@ class RoleSettingsExtraModal(ui.Modal, title="配役設定: その他"):
         self.callback = callback
         s = room.settings if room.custom_settings else room.get_recommended_settings(len(room.players))
         
-        self.add_item(ui.TextInput(label="🧐 アグライア (調査)", default=str(s.get('aglaea', 0))))
-        self.add_item(ui.TextInput(label="🎭 サフェル (模倣)", default=str(s.get('saphel', 0))))
-        self.add_item(ui.TextInput(label="🦇 ヒアンシー (蝙蝠)", default=str(s.get('hyanci', 0))))
+        self.add_item(ui.TextInput(label="🧐 浪漫 (調査)", default=str(s.get('aglaea', 0))))
+        self.add_item(ui.TextInput(label="🎭 詭術 (模倣)", default=str(s.get('saphel', 0))))
+        self.add_item(ui.TextInput(label="🦇 天空 (蝙蝠)", default=str(s.get('hyanci', 0))))
 
     async def on_submit(self, itx):
         try:
