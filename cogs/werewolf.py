@@ -644,6 +644,110 @@ class WerewolfSystem(commands.Cog):
             await room.grave_ch.set_permissions(player.member, overwrite=None)
             await room.main_ch.send(f"😇 奇跡が起き、**{player.name}** の命が戻りました！（能力も全快）")
             await room.grave_ch.send(f"😇 **{player.name}** が蘇生され、戦場へ戻りました。")
+    
+    # --- 追加: 投票ロジック ---
+    async def start_vote_logic(self, room):
+        target_ch = room.main_ch if room.main_ch else room.lobby_channel
+        
+        # アナウンス
+        await target_ch.send("🗳️ **投票フェーズ** を開始します。(制限時間: 60秒)\n個別のDMに投票フォームを送信しました。")
+
+        # 投票リセット
+        room.votes = {}
+        
+        # 投票フォーム配布 (生存者全員へDM)
+        alive_players = room.get_alive()
+        tasks = []
+        for p in alive_players:
+            try:
+                u = self.bot.get_user(p.id)
+                # VoteView: 自分以外の生存者を選択するビュー
+                view = VoteView(room, p, self)
+                tasks.append(u.send("🗳️ 誰を処刑しますか？", view=view))
+            except: pass
+        
+        if tasks: await asyncio.gather(*tasks)
+
+        # 待機ループ (全員投票 または 時間切れまで)
+        wait_seconds = 0
+        timeout = 60
+        while len(room.votes) < len(alive_players):
+            await asyncio.sleep(1)
+            wait_seconds += 1
+            if wait_seconds >= timeout:
+                await target_ch.send("⏰ 投票時間が終了しました。")
+                break
+            # 強制終了チェック
+            if room.phase == "CANCELLED":
+                return
+            
+            # 投票済み人数チェック(オプションで進捗表示などしてもよい)
+
+        # 集計処理へ
+        await self.resolve_vote(room)
+
+    async def resolve_vote(self, room):
+        target_ch = room.main_ch if room.main_ch else room.lobby_channel
+        
+        # 履歴保存 (探偵/Aglaea用)
+        room.prev_votes = room.votes.copy()
+
+        # 集計
+        counts = {}
+        details = [] # GM用のログ
+
+        for voter_id, target_val in room.votes.items():
+            voter = room.players.get(voter_id)
+            if not voter or not voter.is_alive: continue
+            
+            # 富豪(Cerydra)などは2票分
+            weight = voter.vote_weight
+            
+            if target_val == "skip":
+                target_name = "スキップ"
+            else:
+                target_p = room.players.get(target_val)
+                if target_p:
+                    target_name = target_p.name
+                    counts[target_val] = counts.get(target_val, 0) + weight
+                else:
+                    target_name = "不明"
+
+            details.append(f"{voter.name} -> {target_name} ({weight})")
+
+        # GMに内訳送信
+        if room.gm_user:
+            try: await room.gm_user.send("📊 **投票内訳**\n" + "\n".join(details))
+            except: pass
+
+        # 投票なし
+        if not counts:
+            await target_ch.send("🗳️ 投票結果: 投票なしにより処刑は見送られました。")
+            room.last_executed = None
+            return
+
+        # 最多得票者を抽出
+        max_votes = max(counts.values())
+        candidates = [tid for tid, count in counts.items() if count == max_votes]
+
+        # 処刑実行
+        if len(candidates) == 1:
+            target = room.players.get(candidates[0])
+            await target_ch.send(f"🗳️ 投票結果: **{target.name}** が処刑されます。(得票: {max_votes})")
+            
+            # 処刑アクション (kill_player_logic呼び出し)
+            await self.kill_player_logic(room, target)
+            room.last_executed = target
+            
+            # 聖女が処刑された場合のフラグ処理(念のため)
+            if target.role == ROLE_CYRENE:
+                room.cyrene_executed = True
+                
+        else:
+            # 同票の場合 (ランダム処刑にするか見送るかはルール次第ですが、ここでは見送りとします)
+            names = [room.players[tid].name for tid in candidates]
+            await target_ch.send(f"🗳️ 投票結果: **{', '.join(names)}** が同数({max_votes}票)のため、処刑は見送られました。")
+            room.last_executed = None
 
     async def start_night_logic(self, room):
         target_ch = room.main_ch if room.main_ch else room.lobby_channel
