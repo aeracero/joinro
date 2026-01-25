@@ -557,22 +557,36 @@ class WerewolfSystem(commands.Cog):
             
             main_ov = cat_ov.copy()
             grave_ov = cat_ov.copy()
+            wolf_ov = cat_ov.copy() # ★内通チャンネル用権限
             
             # 参加者の権限設定
+            wolf_mentions = []
             for p in room.players.values():
                 main_ov[p.member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                
+                # ★人狼または狂人に内通チャンネル権限付与
+                if p.role in [ROLE_LYKOS, ROLE_CAENEUS]:
+                    wolf_ov[p.member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                    wolf_mentions.append(p.name)
+
             for s in getattr(room, 'spectators', {}).values():
                 main_ov[s] = discord.PermissionOverwrite(read_messages=True, send_messages=False)
                 grave_ov[s] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
             room.main_ch = await room.category.create_text_channel("🌞議論-day", overwrites=main_ov)
             room.grave_ch = await room.category.create_text_channel("🪦墓場-graveyard", overwrites=grave_ov)
+            # ★内通チャンネル作成
+            room.wolf_ch = await room.category.create_text_channel("🐺人狼狂人内通-secret", overwrites=wolf_ov)
             
             # 参加者全員へのメンション
             mentions = [p.member.mention for p in room.players.values()]
             mention_str = " ".join(mentions) if mentions else ""
             
             await room.main_ch.send(f"{mention_str}\n会場を作成しました。部屋コード: `{room.code}`\nこれよりゲームを開始します！")
+            
+            if room.wolf_ch:
+                w_str = ", ".join(wolf_mentions)
+                await room.wolf_ch.send(f"ここは**人狼・狂人**の内通チャットです。\nメンバー: {w_str}\n(作戦会議にご利用ください)")
 
         except Exception as e:
             await room.lobby_channel.send(f"⚠️ 会場作成エラー: {e}")
@@ -584,6 +598,9 @@ class WerewolfSystem(commands.Cog):
         except: pass
         try:
             if room.grave_ch: await room.grave_ch.delete()
+        except: pass
+        try:
+            if room.wolf_ch: await room.wolf_ch.delete() # ★内通チャンネル削除
         except: pass
         try:
             if room.category: await room.category.delete()
@@ -607,6 +624,12 @@ class WerewolfSystem(commands.Cog):
             await room.grave_ch.set_permissions(player.member, read_messages=True, send_messages=True)
             await room.main_ch.send(f"💀 **{player.name}** が脱落しました。")
             await room.grave_ch.send(f"🪦 **{player.name}** が命を失い、ここに辿り着きました。")
+        
+        # ★死亡時の内通チャット権限更新（読み取り専用にする）
+        if room.wolf_ch and player.role in [ROLE_LYKOS, ROLE_CAENEUS]:
+            try:
+                await room.wolf_ch.set_permissions(player.member, read_messages=True, send_messages=False)
+            except: pass
 
         is_mimicking = getattr(player, 'mimicking_cyrene', False)
         if player.role == ROLE_CYRENE or is_mimicking:
@@ -644,6 +667,12 @@ class WerewolfSystem(commands.Cog):
             await room.grave_ch.set_permissions(player.member, overwrite=None)
             await room.main_ch.send(f"😇 奇跡が起き、**{player.name}** の命が戻りました！（能力も全快）")
             await room.grave_ch.send(f"😇 **{player.name}** が蘇生され、戦場へ戻りました。")
+        
+        # ★蘇生時の内通チャット権限復旧
+        if room.wolf_ch and player.role in [ROLE_LYKOS, ROLE_CAENEUS]:
+            try:
+                await room.wolf_ch.set_permissions(player.member, read_messages=True, send_messages=True)
+            except: pass
     
     # --- 追加: 投票ロジック ---
     async def start_vote_logic(self, room):
