@@ -79,6 +79,7 @@ class GameRoom:
         self.category = None
         self.main_ch = None
         self.grave_ch = None
+        self.wolf_ch = None  # ★追加: 内通チャンネル
         self.code = "0000" # 初期値
         
         self.players = {} 
