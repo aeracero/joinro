@@ -461,12 +461,20 @@ class NightActionView(ui.View):
                 if p.id == player.last_guarded_id: continue
             elif p.id == player.id: continue 
             options.append(discord.SelectOption(label=p.name, value=str(p.id)))
+        
+        # ★ 暗殺者の場合、スキップを追加
+        if player.role == ROLE_PHAINON:
+            options.append(discord.SelectOption(label="スキップ (能力を使用しない)", value="skip"))
+
         if not options: options.append(discord.SelectOption(label="なし", value="none"))
         select = ui.Select(placeholder="対象を選択", options=options)
         select.callback = self.on_select
         self.add_item(select)
     async def on_select(self, itx):
-        tid = int(itx.data['values'][0]) if itx.data['values'][0] != "none" else None
+        val = itx.data['values'][0]
+        if val == "none": tid = None
+        elif val == "skip": tid = "skip"
+        else: tid = int(val)
         await self.callback(itx, self.player, self.action_type, tid)
 
 class CyreneSelfGuardView(ui.View):
@@ -903,6 +911,10 @@ class WerewolfSystem(commands.Cog):
                 else:
                     await itx.response.edit_message(content="🛡️ 自衛をスキップしました。", view=None)
                 pending_actors.discard(player.id)
+
+            elif val == "skip":
+                await itx.response.edit_message(content="✅ 能力の使用をスキップしました。", view=None)
+                pending_actors.discard(player.id)
             
             else:
                 act_str = {"steal":"襲撃", "guard":"護衛", "slash":"辻斬り", "assassinate":"暗殺"}.get(act, act)
@@ -1071,10 +1083,10 @@ class WerewolfSystem(commands.Cog):
                 others = [p.id for p in room.get_alive() if p.id != slash[0]]
                 if others: slash.append(random.choice(others))
 
-        steal = [x for x in steal if x]
-        guard = [x for x in guard if x]
-        slash = [x for x in slash if x]
-        assas = [x for x in assas if x]
+        steal = [x for x in steal if isinstance(x, int)]
+        guard = [x for x in guard if isinstance(x, int)]
+        slash = [x for x in slash if isinstance(x, int)]
+        assas = [x for x in assas if isinstance(x, int)]
 
         if room.night_actions.get("guard"):
             siren = next((p for p in room.get_alive() if p.role == ROLE_SIRENS), None)
