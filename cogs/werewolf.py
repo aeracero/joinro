@@ -1207,7 +1207,10 @@ class WerewolfSystem(commands.Cog):
                     return
                 if room.phase == "STARTING": break
             
-            # 開始: 会場作成
+            # ★修正: 役職割り当てを先に実行
+            room.assign_roles()
+
+            # 開始: 会場作成 (役職決定後に実行することで権限が適用される)
             await self.setup_venue(room)
             
             # チャンネルマップに登録（これでコマンドが反応する）
@@ -1255,7 +1258,7 @@ class WerewolfSystem(commands.Cog):
     async def run_game(self, channel_id):
         room = self.channel_map.get(channel_id)
         if not room: return
-        room.assign_roles()
+        # room.assign_roles() # ★削除 (game_loopで実行済み)
         target_ch = room.main_ch
 
         # 役職DM送信
